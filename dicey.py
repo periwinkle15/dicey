@@ -33,7 +33,7 @@ fail = "Couldn't parse input. Use /help to get more information."
 
 helpDoc = """
 ```
-/roll [[iterations]x][[number]d[die type]][+[bonus]][drop [number]][,[new roll]]
+/roll [[iterations]x][[number]d[die type]][+[bonus]][other keys][,[new roll]]
 Use /SimpleRollHelp for info and examples.
 
 /croll [[number=1][b OR p]]...[[score][threshold]]
@@ -49,13 +49,20 @@ You already found me!
 
 simpleRollDoc = """
 ```
-/roll [[iterations]x][[number]d[die type]][+[bonus]][drop [number]][,[new roll]]
+/roll [[iterations]x][[number]d[die type]][+/-[bonus]][drop [number]][>[=]success boundary][![>[=] exploding dice][,[new roll]]
 Defaults to rolling 1d20
 Spaces don't matter.
 
-x has a global scope; it applies to everything after it and cannot be repeated. It causes exactly the same roll to happen again. It must be proceeded by a number.
-, has a narrow scope; it creates a new roll, whose default values are set by the previous roll. No input repeats the same roll; a single digit resets the modifier; an xdy sets all values new, including setting the modifier to 0.
-The "drop" keywords drops the lowest N rolls, where N defaults to 1 or can be set by appending an integer. It resets to 0 unless a roll is being exactly repeated.
+In order (and order does matter; it's set by what order the operations make sense in):
+[[iterations]x] has global scope; it applies to everything after it and cannot be repeated. It causes the same input to be used again; /roll 2x performs /roll twice.
+[number] on its own is interpreted as a bonus to the default roll.
+[xdy] rolls a y-sided die x times and adds together the results. If x is ommitted, it defaults to 1.
+[+ or - bonus] adds or subtracts a fixed amount to the total.
+[drop] drops the lowest N rolls from the total, where N defaults to 1 or can be set by appending an integer. It resets to 0 unless a roll is being exactly repeated.
+[>[=]] sets a boundary above which rolls will be counted as a success, and reported as successes or failures instead of raw numbers. Use >None to reset it to nonexistence.
+[!] causes World of Darkness style exploding dice (rolls above a certain value trigger a new roll). It applies to the total xdy+z, not to each individual dy. It defaults to the maximum number; set a boundary with [>[=]]. Reset to nonexistence with !None.
+[,] allows you to enter a new roll. Instead of 1d20, defaults will be set by the previous roll.
+
 Examples:
 		/roll
 		2
@@ -123,6 +130,23 @@ class DiceResult:
 		self.title=""
 		self.desc=""
 		self.colour=COL_NORM_SUCCESS
+
+class Roll:
+	def __init__(self):
+		self.dice = 1
+		self.type = 20
+		self.bonus = 0
+		self.drop = 0
+		self.success = None
+		self.explode = None
+
+	def params(self):
+		return {"Dice": self.dice, 
+				"Type": self.type,
+				"Bonus": self.bonus,
+				"Drop": self.drop, 
+				"Success": self.success,
+				"Explode": self.explode}
 
 def RollDie(minimum=1, maximum=20):
 	result = randint(minimum,maximum)
@@ -276,38 +300,75 @@ def parseCRoll(diceString):
 
 """
 Simple d20-style dice rolling functions
+lmao "simple"
 """
 
-def ResolveSimpleDice(Dice, DieType, Bonus, Drop):
+def ResolveSimpleDice(rollObject, depth=0):
 	"""
 	Creates a DiceResult object given an xdy+z - style roll.
+	That roll is contained in a Roll() class
 	"""
 
+	if depth > rollsLimit:
+		return "I tried to explode the dice like you asked, but there were too many of them.\nWhatever you were doing, you probably won."
+
 	result = []
+	retList = []
 
 	# roll
-	for die in range(Dice):
-		if DieType == 0:
+	for die in range(rollObject.dice):
+		if rollObject.type == 0:
 			result.append(0)
 		else:
-			result.append(RollDie(1, DieType))
+			result.append(RollDie(1, rollObject.type))
 
 	# drop lowest, if applicable
 	dropList = []
-	while len(dropList) < Drop:
+	while len(dropList) < rollObject.drop:
 		dropList.append(min(result))
 		result.remove(min(result))
 
-	CombinedResult = sum(result)+Bonus
+	CombinedResult = sum(result) + rollObject.bonus
 
-	prelude = str(Dice) + 'd' + str(DieType) + '+' + str(Bonus) + ':  '
+	# Explode
+	if rollObject.explode is not None:
+		if CombinedResult >= rollObject.explode:
+			ret = ResolveSimpleDice(rollObject, depth + 1)
+
+			if type(ret) is str:
+				return ret
+			else:
+				retList.extend(ret)
+
+	# Check for success, if applicable
+	success = ''
+	if rollObject.success is not None:
+		if CombinedResult >= rollObject.success:
+			success = 'Success'
+		else:
+			success = 'Failure'
+
+	# Construct description string
+	prelude = ''
+	if depth > 0:
+		prelude += 'Explosion:  '
+
+	prelude += str(rollObject.dice) + 'd' + str(rollObject.type) + ' + ' + str(rollObject.bonus) 
+
+	if rollObject.success is not None:
+		prelude += ' \u2265 ' + str(rollObject.success)
+
+	if rollObject.explode is not None:
+		prelude += ' ! \u2265 ' + str(rollObject.explode)
+
+	prelude += ':  '
 	resultDesc = ' + '.join([str(i) for i in result])
 
-	if Bonus == 0:
+	if rollObject.bonus == 0:
 		bonusDesc = ''
 	else:
 		resultDesc = '(' + resultDesc
-		bonusDesc = ') + ' + str(Bonus)
+		bonusDesc = ') + ' + str(rollObject.bonus)
 	desc = resultDesc + bonusDesc
 
 	if '+' in desc:
@@ -318,12 +379,28 @@ def ResolveSimpleDice(Dice, DieType, Bonus, Drop):
 	if len(dropList) > 0:
 		desc += '   (dropped ' + ', '.join([str(i) for i in dropList]) + ')'
 
+	# Construct DiceResult object to return info
 	ret = DiceResult()
-	ret.title = str(CombinedResult)
-	ret.colour = COL_NORM_SUCCESS
+
+	if success == 'Success':
+		desc += '  \u2265 ' + str(rollObject.success)
+		ret.title = success
+		ret.colour = COL_HARD_SUCCESS
+	elif success == 'Failure':
+		desc += '  < ' + str(rollObject.success)
+		ret.title = success
+		ret.colour = COL_NORM_FAILURE
+	else:
+		ret.title = str(CombinedResult)
+	
 	ret.desc = desc.replace("+-", "-").replace("+ -", "- ")
 	
-	return ret
+	retList.append(ret)
+
+	if depth == 0:
+		retList.reverse()
+
+	return retList
 
 def parseSimpleRoll(diceString):
 	"""
@@ -334,7 +411,11 @@ def parseSimpleRoll(diceString):
 	# Clean up input
 	# this isn't cleaning this is horrible
 	# i'm really sorry
-	diceString = diceString.replace(" ", "").replace("-","+-").replace("++", "+")
+	diceString = diceString.replace(" ", "")
+	diceString = diceString.replace("-","+-")
+	diceString = diceString.replace("++", "+")
+
+	# Split up different rolls
 	rolls = diceString.split(",")
 
 	# Look for the x multiplier
@@ -357,83 +438,120 @@ def parseSimpleRoll(diceString):
 	result = []
 	for n in range(iterations):
 		# Defaults are reset each iteration to ensure the same result
-		defaultDice = 1
-		defaultType = 20
-		defaultBonus = 0
-		defaultDrop = 0
+		rollParams = Roll()
 
+		# if True:
 		try: 
 			for roll in rolls:
 
 				# Blank rolls go to default
 				if len(roll) == 0:
-					result.append(ResolveSimpleDice(defaultDice, defaultType, defaultBonus, defaultDrop))
+					result.extend(ResolveSimpleDice(rollParams))
+
 				else:
-					# Look for Drop indicator
-					dropIndex = roll.find('drop')
-					if dropIndex == -1:
-						Drop = 0
-					elif dropIndex + len('drop') == len(roll):
-						Drop = 1
-					else:
-						Drop = int(roll[dropIndex+len('drop'):])
 
-					if dropIndex != -1:
-						roll = roll[:dropIndex]
+					# If the roll isn't the same, default success back to nonexistence
+					rollParams.success = None
 
-					if len(roll) == 0:
-						Dice = defaultDice
-						DieType = defaultType
-						Bonus = defaultBonus
+					# "Exploding dice"
+					explodeIndex = roll.find('!')
+					explodeString = ''
+					if explodeIndex != -1:
+						explodeString = roll[explodeIndex:]
 
-					else:
+						roll = roll[:explodeIndex]
 
-						dIndex=roll.find('d')
-						bonusIndex=roll.find('+')
+					# If there's still stuff left...
+					if len(roll) != 0:
 
-						if bonusIndex == -1:
-							bonusIndex = len(roll)
+						# Look for >
+						successIndex = roll.find('>')
+						if successIndex != -1:
 
-						# If there's no dice given
-						if dIndex == -1:
-							Dice = defaultDice
-							DieType = defaultType
-						# If dice number isn't specified but type is, set to 1
-						elif dIndex == 0:
-							Dice = 1
-							DieType = int(roll[dIndex+1:bonusIndex])
-						# Both dice and type specified
-						else:
-							Dice = int(roll[:dIndex])
-							DieType = int(roll[dIndex+1:bonusIndex])
+							if roll[successIndex+1] == '=':
+								rollParams.success = int(roll[successIndex+2:])
+							elif "none" in roll[successIndex:]:
+								rollParams.success = None
+							else:
+								rollParams.success = int(roll[successIndex+1:])+1
 
-						# Determine modifier
-						if bonusIndex != len(roll):
-							Bonus=int(roll[bonusIndex+1:])
-						# If roll was a single number, interpret it as the modifier
-						elif 'd' not in roll:
-							Bonus = int(roll)
-						# If roll was not a single number, but no bonus was specified,
-						# set bonus to 0
-						else:
-							Bonus = 0
+							roll = roll[:successIndex]
 
-					# Reset defaults
-					defaultDice = Dice
-					defaultType = DieType
-					defaultBonus = Bonus
-					defaultDrop = Drop
 
-					# Check for excessively large numbers
-					if any([DieType>digitLimit, Bonus>digitLimit]):
+						# If there's still stuff left...
+						if len(roll) != 0:
+
+							# Look for Drop indicator
+							dropIndex = roll.find('drop')
+							if dropIndex == -1:
+								rollParams.drop = 0
+							elif dropIndex + len('drop') == len(roll):
+								rollParams.drop = 1
+							else:
+								rollParams.drop = int(roll[dropIndex+len('drop'):])
+
+							if dropIndex != -1:
+								roll = roll[:dropIndex]
+
+							# If there's still stuff left...
+							if len(roll) != 0:
+
+								dIndex=roll.find('d')
+								bonusIndex=roll.find('+')
+
+								if bonusIndex == -1:
+									bonusIndex = len(roll)
+
+								# If dice number isn't specified but type is, set to 1
+								if dIndex == 0:
+									rollParams.dice = 1
+									rollParams.type = int(roll[dIndex+1:bonusIndex])
+								# Both dice and type specified
+								elif dIndex != -1:
+									rollParams.dice = int(roll[:dIndex])
+									rollParams.type = int(roll[dIndex+1:bonusIndex])
+
+								# Determine modifier
+								if bonusIndex != len(roll):
+									rollParams.bonus = int(roll[bonusIndex+1:])
+								# If roll was a single number, interpret it as the modifier
+								elif 'd' not in roll:
+									rollParams.bonus = int(roll)
+								# If roll was not a single number, but no bonus was specified,
+								# set bonus to 0
+								else:
+									rollParams.bonus = 0
+
+					if explodeString == '!':
+						rollParams.explode = rollParams.type
+					elif '=' in explodeString:
+						rollParams.explode = int(explodeString[3:])
+					elif '>' in explodeString:
+						rollParams.explode = int(explodeString[2:]) + 1
+					elif 'none' in explodeString:
+						rollParams.explode = None
+					elif explodeString != "":
+						return fail
+
+					# Check for bad numbers
+					if any([abs(i[1]) > digitLimit for i in rollParams.params().items() if i[1] is not None]):
 						return "Hey, stop trying to break me with big numbers :("
-					if Dice>rollsLimit:
+					if rollParams.dice > rollsLimit:
 						return "Sorry... I'd rather not print that many rolls."
-					if Drop > Dice:
+					if rollParams.drop > rollParams.dice:
 						return "You're dropping more dice than you're rolling."
+					if rollParams.drop < 0:
+						return "Can't drop negative number of dice."
+					if rollParams.explode is not None:
+						if rollParams.dice * rollParams.type + rollParams.bonus - rollParams.explode == 1:
+							return "That would be an infini-explosion... that's mean :("
 
 					# Return roll
-					result.append(ResolveSimpleDice(Dice, DieType, Bonus, Drop))
+					res = ResolveSimpleDice(rollParams)
+					if type(res) is str:
+						return res
+
+					result.extend(res)
 
 		# Return help doc on failure
 		except:
@@ -491,15 +609,53 @@ async def on_message(message):
 		# If result was a string, something failed; send string.
 		if isinstance(result, str):
 			await message.channel.send(result)
+
 		# Else the function returns a list of DiceResult objects
 		# Concatenate them into a text box
 		else:
-			em = discord.Embed(title=str(", ".join([roll.title for roll in result])),
-								colour=COL_NORM_SUCCESS)
-			em.set_footer(text=str("\n".join([roll.desc for roll in result])))
+			# If all the titles are success/failure, do a count-successes thing instead
+			titles = [roll.title for roll in result]
+			successes = titles.count('Success')
+
+			if all([i == 'Success' or i == 'Failure' for i in titles]):
+				em = discord.Embed(title = str(successes) + ' Success(es)')
+				if successes == 0:
+					em.color = COL_NORM_FAILURE
+				elif successes == len(titles):
+					em.color = COL_HARD_SUCCESS
+				else:
+					em.color = COL_NORM_SUCCESS
+
+			# Or count the successes, then display the base numbers
+			elif 'Success' in titles or 'Failure' in titles:
+				title = str(successes) + ' Success(es), '
+				title += ", ".join([i for i in titles if i != 'Success' and i != 'Failure' ])
+
+				em = discord.Embed(title = title)
+
+				if successes == 0:
+					em.color = COL_NORM_FAILURE
+				else:
+					em.color = COL_NORM_SUCCESS
+
+			# Or just return the numbers
+			else:
+				em = discord.Embed(title=", ".join([i for i in titles]))
+				if len(titles) == 1:
+					em.color = result[0].colour
+				else:
+					em.color = COL_NORM_SUCCESS
+
+			em.set_footer(text = str("\n".join([roll.desc for roll in result])))
 			em.description = author
 
-			await message.channel.send(embed=em)
+			if len(em.title) > 256:
+				await message.channel.send("Too many results, couldn't send message.")
+			else:
+				if len(em.footer) >= 2048:
+					em.set_footer(text = "description too long; surpressed")
+
+				await message.channel.send(embed=em)
 
 	# Handle a /croll command
 	elif parse.startswith(cRoll):
