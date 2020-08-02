@@ -7,12 +7,19 @@ Thanks to the bot Dorian for the basic structure.
 """
 Imports
 """
-import discord
-import re
-import logging
+
 import asyncio
-from os import environ
+import discord
+import logging
+from urllib import parse
+from urllib import request
+from random import choice
 from random import randint
+import re
+import youtube_dl
+
+from diceClasses import *
+from dicey_token import token
 
 """
 Global variables
@@ -22,6 +29,7 @@ logging.basicConfig(level=logging.INFO)
 
 client = discord.Client()
 discord.opus.load_opus
+
 cRoll = "/croll"
 simpleRoll = "/roll"
 disconnect = "/disconnect"
@@ -39,6 +47,12 @@ Use /SimpleRollHelp for info and examples.
 /croll [[number=1][b OR p]]...[[score][threshold]]
 Use /CoCRollHelp for info and examples.
 
+/mood [random OR [search terms]]
+Sends a random youtube video found by searching rpg-background-music type keywords.
+No argument returns a generic video
+random returns a search with a an additional "mood" specifier chosen from a list of words like "battle," "creepy," etc.
+Or add your own search terms
+
 /disconnect
 As on tin
 
@@ -49,24 +63,24 @@ You already found me!
 
 simpleRollDoc = """
 ```
-/roll [[iterations]x][[number]d[die type]][+/-[bonus]][drop [number]][>[=]success boundary][![>[=] exploding dice][,[new roll]]
+/roll [[iterations]x][[number]d[die type]][+/-[bonus]][other options][,[new roll]]
 Defaults to rolling 1d20
-Spaces don't matter.
 
-In order (and order does matter; it's set by what order the operations make sense in):
 [[iterations]x] has global scope; it applies to everything after it and cannot be repeated. It causes the same input to be used again; /roll 2x performs /roll twice.
 [number] on its own is interpreted as a bonus to the default roll.
 [xdy] rolls a y-sided die x times and adds together the results. If x is ommitted, it defaults to 1.
 [+ or - bonus] adds or subtracts a fixed amount to the total.
-[drop] drops the lowest N rolls from the total, where N defaults to 1 or can be set by appending an integer. It resets to 0 unless a roll is being exactly repeated.
-[>[=]] sets a boundary above which rolls will be counted as a success, and reported as successes or failures instead of raw numbers. Use >None to reset it to nonexistence.
-[!] causes World of Darkness style exploding dice (rolls above a certain value trigger a new roll). It applies to the total xdy+z, not to each individual dy. It defaults to the maximum number; set a boundary with [>[=]]. Reset to nonexistence with !None.
-[,] allows you to enter a new roll. Instead of 1d20, defaults will be set by the previous roll.
+[drop] drops the lowest N rolls from the total, where N defaults to 1 or can be set by appending an integer. It resets to 0 unless a roll is being repeated.
+[keep] keeps the lowest N rolls, dropping the higher from the total, where N defaults to 1 or can be set by appending an integer. It resets to 0 unless a roll is being repeated.
+[>/<[=]] sets a boundary above or below which rolls will be counted as a success, and reported as successes or failures instead of raw numbers.
+[!] causes World of Darkness style exploding dice (rolls above a certain value trigger a new roll). It applies to the total xdy+z, not to each individual dy. It defaults to the maximum number; set a boundary with [>[=]] or [<[=]].
+[!!] causes Shadowrun or Riddle of Steel style exploding dice, in which a new roll is added to the previous value.
+[,] allows you to enter a new roll. Instead of 1d20, defaults will be set by the previous roll. If a new die type is entered, "fancy" attributes like drop go back to default.
 
 Examples:
 		/roll
 		2
-		1d20+0: 2
+		1d20: 2
 
 		/roll 2d10+2
 		13, 22
@@ -77,10 +91,10 @@ Examples:
 		32, 4, 4, 40, 14, 3
 		3d17+3:  (17 + 7 + 5) + 3 = 32
 		3d17+2:  (2) + 2 = 4 (dropped 1, 1)
-		1d4+0:  4
+		1d4:  4
 		3d17+3:  (15 + 16 + 6) + 3 = 40
 		3d17+2:  (12) + 2 = 14 (dropped 3, 8)
-		1d4+0:  3
+		1d4:  3
 ```
 """
 
@@ -108,6 +122,15 @@ Examples:
 		Failure: 0/50/70 + 4 = 74
 ```
 """
+mood = "/mood"
+music = "music"
+genericSearches = ["dungeon", "adventure", "rpg", "dungeons and dragons", "d&d", "background", "fantasy", "video game"]
+moodChoices = ["creepy", "epic", "battle", "crypt", "enchanted", "village", "woods", "winter", "city", "desert"]
+
+goodRobot = ["Thanks! :smile:", "I appreciate it!", "Always happy to help! :wink:", ":robot::heart_exclamation:"]
+badRobot = [":cry:", ":robot::broken_heart:", "I'm sorry... I'll try to do better."]*5+["Look, *you* try keeping track of all this math."]
+greetings = ["Hi!", "Hello!", "Happy to be here!"]
+greetRobot = ["hi", "hello", "meet", "here"]
 
 rollsLimit = 50
 digitLimit = 10000
@@ -122,38 +145,7 @@ COL_NORM_FAILURE=0xe74c3c
 COL_CRIT_FAILURE=0x992d22
 
 """
-Setup functions and classes
-"""
-
-class DiceResult:
-	def __init__(self):
-		self.title=""
-		self.desc=""
-		self.colour=COL_NORM_SUCCESS
-
-class Roll:
-	def __init__(self):
-		self.dice = 1
-		self.type = 20
-		self.bonus = 0
-		self.drop = 0
-		self.success = None
-		self.explode = None
-
-	def params(self):
-		return {"Dice": self.dice, 
-				"Type": self.type,
-				"Bonus": self.bonus,
-				"Drop": self.drop, 
-				"Success": self.success,
-				"Explode": self.explode}
-
-def RollDie(minimum=1, maximum=20):
-	result = randint(minimum,maximum)
-	return result
-
-"""
-Call of Cthulhu - roller that does penalty dice, bonus dice, and thresholds.
+Miscellaneous fun functions
 """
 
 def ResolveCDice(BonusDie, PenaltyDie, Threshold):
@@ -298,266 +290,26 @@ def parseCRoll(diceString):
 				
 	return ResolveCDice(BonusDie, PenaltyDie, Threshold)
 
-"""
-Simple d20-style dice rolling functions
-lmao "simple"
-"""
+def getMood(searchString):
 
-def ResolveSimpleDice(rollObject, depth=0):
-	"""
-	Creates a DiceResult object given an xdy+z - style roll.
-	That roll is contained in a Roll() class
-	"""
+	search = " ".join([choice(genericSearches) for i in range(randint(1, 3))])
 
-	if depth > rollsLimit:
-		return "I tried to explode the dice like you asked, but there were too many of them.\nWhatever you were doing, you probably won."
+	if "random" in searchString:
+		search += " " + " ".join([choice(moodChoices) for i in range(randint(1, 2))])
+	elif searchString != "":
+		search += " " + searchString
 
-	result = []
-	retList = []
+	search += " " + music
 
-	# roll
-	for die in range(rollObject.dice):
-		if rollObject.type == 0:
-			result.append(0)
-		else:
-			result.append(RollDie(1, rollObject.type))
+	ydl_opts = {'format': 'bestaudio', 'noplaylist': True, 'no_warnings': True, "include ads": False, 
+				"skip_downloads": True, "simulate": True, "age_limit": 13,}
 
-	# drop lowest, if applicable
-	dropList = []
-	while len(dropList) < rollObject.drop:
-		dropList.append(min(result))
-		result.remove(min(result))
+	with youtube_dl.YoutubeDL(ydl_opts) as ydl:
 
-	CombinedResult = sum(result) + rollObject.bonus
+		video = ydl.extract_info(f'ytsearch:{search}', download=False)['entries'][0]
+		print(len(ydl.extract_info(f'ytsearch:{search}', download=False)['entries']))
 
-	# Explode
-	if rollObject.explode is not None:
-		if CombinedResult >= rollObject.explode:
-			ret = ResolveSimpleDice(rollObject, depth + 1)
-
-			if type(ret) is str:
-				return ret
-			else:
-				retList.extend(ret)
-
-	# Check for success, if applicable
-	success = ''
-	if rollObject.success is not None:
-		if CombinedResult >= rollObject.success:
-			success = 'Success'
-		else:
-			success = 'Failure'
-
-	# Construct description string
-	prelude = ''
-	if depth > 0:
-		prelude += 'Explosion:  '
-
-	prelude += str(rollObject.dice) + 'd' + str(rollObject.type) + ' + ' + str(rollObject.bonus) 
-
-	if rollObject.success is not None:
-		prelude += ' \u2265 ' + str(rollObject.success)
-
-	if rollObject.explode is not None:
-		prelude += ' ! \u2265 ' + str(rollObject.explode)
-
-	prelude += ':  '
-	resultDesc = ' + '.join([str(i) for i in result])
-
-	if rollObject.bonus == 0:
-		bonusDesc = ''
-	else:
-		resultDesc = '(' + resultDesc
-		bonusDesc = ') + ' + str(rollObject.bonus)
-	desc = resultDesc + bonusDesc
-
-	if '+' in desc:
-		desc = prelude + desc + ' = ' + str(CombinedResult)
-	else:
-		desc = prelude + str(CombinedResult)
-
-	if len(dropList) > 0:
-		desc += '   (dropped ' + ', '.join([str(i) for i in dropList]) + ')'
-
-	# Construct DiceResult object to return info
-	ret = DiceResult()
-
-	if success == 'Success':
-		desc += '  \u2265 ' + str(rollObject.success)
-		ret.title = success
-		ret.colour = COL_HARD_SUCCESS
-	elif success == 'Failure':
-		desc += '  < ' + str(rollObject.success)
-		ret.title = success
-		ret.colour = COL_NORM_FAILURE
-	else:
-		ret.title = str(CombinedResult)
-	
-	ret.desc = desc.replace("+-", "-").replace("+ -", "- ")
-	
-	retList.append(ret)
-
-	if depth == 0:
-		retList.reverse()
-
-	return retList
-
-def parseSimpleRoll(diceString):
-	"""
-	Does its level best to make sense of the raw input
-	and turn it into a series of xdy+z rolls 
-	"""
-
-	# Clean up input
-	# this isn't cleaning this is horrible
-	# i'm really sorry
-	diceString = diceString.replace(" ", "")
-	diceString = diceString.replace("-","+-")
-	diceString = diceString.replace("++", "+")
-
-	# Split up different rolls
-	rolls = diceString.split(",")
-
-	# Look for the x multiplier
-	try:
-		multIndex = rolls[0].find("x")
-		if multIndex != -1:
-			iterations = int(rolls[0][:multIndex])
-			rolls[0] = rolls[0][multIndex+1:]
-		else:
-			iterations = 1
-	# Return help doc on failure
-	except:
-		return fail
-
-	# Check for excessively large number of loops being required
-	if len(rolls)*iterations > rollsLimit:
-		return "Sorry... I'd rather not print that many rolls."
-
-	# Loop through rolls
-	result = []
-	for n in range(iterations):
-		# Defaults are reset each iteration to ensure the same result
-		rollParams = Roll()
-
-		# if True:
-		try: 
-			for roll in rolls:
-
-				# Blank rolls go to default
-				if len(roll) == 0:
-					result.extend(ResolveSimpleDice(rollParams))
-
-				else:
-
-					# If the roll isn't the same, default success back to nonexistence
-					rollParams.success = None
-
-					# "Exploding dice"
-					explodeIndex = roll.find('!')
-					explodeString = ''
-					if explodeIndex != -1:
-						explodeString = roll[explodeIndex:]
-
-						roll = roll[:explodeIndex]
-
-					# If there's still stuff left...
-					if len(roll) != 0:
-
-						# Look for >
-						successIndex = roll.find('>')
-						if successIndex != -1:
-
-							if roll[successIndex+1] == '=':
-								rollParams.success = int(roll[successIndex+2:])
-							elif "none" in roll[successIndex:]:
-								rollParams.success = None
-							else:
-								rollParams.success = int(roll[successIndex+1:])+1
-
-							roll = roll[:successIndex]
-
-
-						# If there's still stuff left...
-						if len(roll) != 0:
-
-							# Look for Drop indicator
-							dropIndex = roll.find('drop')
-							if dropIndex == -1:
-								rollParams.drop = 0
-							elif dropIndex + len('drop') == len(roll):
-								rollParams.drop = 1
-							else:
-								rollParams.drop = int(roll[dropIndex+len('drop'):])
-
-							if dropIndex != -1:
-								roll = roll[:dropIndex]
-
-							# If there's still stuff left...
-							if len(roll) != 0:
-
-								dIndex=roll.find('d')
-								bonusIndex=roll.find('+')
-
-								if bonusIndex == -1:
-									bonusIndex = len(roll)
-
-								# If dice number isn't specified but type is, set to 1
-								if dIndex == 0:
-									rollParams.dice = 1
-									rollParams.type = int(roll[dIndex+1:bonusIndex])
-								# Both dice and type specified
-								elif dIndex != -1:
-									rollParams.dice = int(roll[:dIndex])
-									rollParams.type = int(roll[dIndex+1:bonusIndex])
-
-								# Determine modifier
-								if bonusIndex != len(roll):
-									rollParams.bonus = int(roll[bonusIndex+1:])
-								# If roll was a single number, interpret it as the modifier
-								elif 'd' not in roll:
-									rollParams.bonus = int(roll)
-								# If roll was not a single number, but no bonus was specified,
-								# set bonus to 0
-								else:
-									rollParams.bonus = 0
-
-					if explodeString == '!':
-						rollParams.explode = rollParams.type
-					elif '=' in explodeString:
-						rollParams.explode = int(explodeString[3:])
-					elif '>' in explodeString:
-						rollParams.explode = int(explodeString[2:]) + 1
-					elif 'none' in explodeString:
-						rollParams.explode = None
-					elif explodeString != "":
-						return fail
-
-					# Check for bad numbers
-					if any([abs(i[1]) > digitLimit for i in rollParams.params().items() if i[1] is not None]):
-						return "Hey, stop trying to break me with big numbers :("
-					if rollParams.dice > rollsLimit:
-						return "Sorry... I'd rather not print that many rolls."
-					if rollParams.drop > rollParams.dice:
-						return "You're dropping more dice than you're rolling."
-					if rollParams.drop < 0:
-						return "Can't drop negative number of dice."
-					if rollParams.explode is not None:
-						if rollParams.dice * rollParams.type + rollParams.bonus - rollParams.explode == 1:
-							return "That would be an infini-explosion... that's mean :("
-
-					# Return roll
-					res = ResolveSimpleDice(rollParams)
-					if type(res) is str:
-						return res
-
-					result.extend(res)
-
-		# Return help doc on failure
-		except:
-			return fail
-
-	return result
+	return f"Search result : {video['webpage_url']}"
 
 """
 Functions that handle Discord events.
@@ -583,32 +335,24 @@ async def on_message(message):
 		return
 
 	# Get basic info
-	parse = message.content.lower().replace(" ", "")
+	parse = message.content.lower()
 	if isinstance(message.author.nick, str):
 		author = message.author.nick
 	else:
 		author = message.author.name
 	author += "'s roll"
 
-
-	# Cute extras
-	if "badrobot" in parse or "badbot" in parse:
-		await message.channel.send(":cry:")
-
-	elif "goodrobot" in parse or "goodbot" in parse:
-		await message.channel.send("Thanks! :smile:")
-
-	elif "dicey" in message.content.lower():
-		# Don't want to interpret things like "dice yes" here
-		await message.channel.send("Hi!")
-
 	# Handle a /roll command
-	elif parse.startswith(simpleRoll):
-		result = parseSimpleRoll(parse[len(simpleRoll):])
+	if parse.startswith(simpleRoll):
+
+		roll = Roll(parse[len(simpleRoll):])
+		result = roll.result
 
 		# If result was a string, something failed; send string.
 		if isinstance(result, str):
 			await message.channel.send(result)
+		elif result is ValueError:
+			await message.channel.send(fail)
 
 		# Else the function returns a list of DiceResult objects
 		# Concatenate them into a text box
@@ -674,6 +418,20 @@ async def on_message(message):
 
 			await message.channel.send(embed=em)	
 
+	elif message.content.startswith(mood):
+		await message.channel.send(getMood(message.content[len(mood):]))
+
+	# Cute extras
+	elif "badrobot" in parse.replace(" ", "") or "badbot" in parse.replace(" ", "") and "not" not in parse:
+		await message.channel.send(choice(badRobot))
+
+	elif "goodrobot" in parse.replace(" ", "") or "goodbot" in parse.replace(" ", "") and "not" not in parse:
+		await message.channel.send(choice(goodRobot))
+
+	elif "dicey" in parse and any([item in parse for item in greetRobot]):
+		# Don't want to interpret things like "dice yes" here
+		await message.channel.send(choice(greetings))
+
 	# Handle disconnect
 	elif message.content == disconnect:
 		await message.channel.send("Dicey is disconnecting!")
@@ -695,5 +453,4 @@ Finally...
 we run the bot
 """
 
-token=environ['DICEY_TOKEN']
 client.run(token)
