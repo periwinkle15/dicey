@@ -128,7 +128,7 @@ class Roll:
 		self.rollsLimit = 50
 		self.digitLimit = 10000
 
-		self.__commands__ = r"(drop|keep|exp|explode|>=|=>|<=|=<|[!><=d ])"
+		self.__commands__ = r"(drop|keep|exp|explode|>=|=>|<=|=<|[\+!><=d ])"
 		self.__mult__ = "Command appears more than once."
 		self.__incompatible__ = "Incompatible commands used."
 		self.__overRolls__ = "Sorry... I'd rather not print that many rolls."
@@ -256,7 +256,7 @@ class Roll:
 
 		prelude += str(self.dice) + "d" + str(self.type)
 		if self.bonus != 0:
-			prelude != " + " + str(self.bonus)
+			prelude += " + " + str(self.bonus)
 
 		if self.success is not None:
 			if not self.__lessThanFlag__:
@@ -379,7 +379,15 @@ class Roll:
 					commands = re.split(self.__commands__, roll)
 					commands = [item for item in commands if item != " "]
 					commands = [item for item in commands if item != ""]
+					temp = []
+					for n in range(len(commands)):
+						if commands[n] is "-":
+							commands[n] = commands[n] + commands[n+1]
+							temp.append(n+1)
+					commands = [commands[n] for n in range(len(commands)) if n not in temp]
 
+
+					print(commands)
 					# Now search through commands to apply each one.
 					# xdy+z syntax
 					if "d" in commands:
@@ -394,9 +402,9 @@ class Roll:
 							except:
 								pass
 
-						self.type = int(commands[index+1].split("+")[0])
-						if "+" in commands[index+1]:
-							self.bonus = int(commands[index+1].split("+")[1])
+						self.type = int(commands[index+1])
+						if "+" in commands[index+2]:
+							self.bonus = int(commands[index+3])
 
 					# Or interpret a single number as the bonus
 					else:
@@ -549,4 +557,4 @@ class Roll:
 			return self.result
 
 		# except:
-		# 	return ValueError
+			# return ValueError
