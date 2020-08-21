@@ -403,8 +403,9 @@ class Roll:
 								pass
 
 						self.type = int(commands[index+1])
-						if "+" in commands[index+2]:
-							self.bonus = int(commands[index+3])
+						if index + 3 < len(commands):
+							if "+" in commands[index+2]:
+								self.bonus = int(commands[index+3])
 
 					# Or interpret a single number as the bonus
 					else:
@@ -416,9 +417,10 @@ class Roll:
 					if "drop" in commands:
 						index = commands.index("drop")
 
-						if "drop" in commands[index+1:]:
-							self.result = self.__mult__
-							return self.result
+						if index + 1 < len(commands):
+							if "drop" in commands[index+1:]:
+								self.result = self.__mult__
+								return self.result
 
 						try:
 							self.drop = int(commands[index+1])
@@ -432,9 +434,10 @@ class Roll:
 							self.result = self.__incompatible__
 							return self.result
 
-						if "keep" in commands[index+1:]:
-							self.result = self.__mult__
-							return self.result
+						if index + 1 < len(commands):
+							if "keep" in commands[index+1:]:
+								self.result = self.__mult__
+								return self.result
 
 						self.__keepFlag__ = True
 						try:
@@ -450,18 +453,20 @@ class Roll:
 
 						# Check for compound exploding dice
 						if index+1 != len(commands):
-							if commands[index+1] == "!":
-								self.explodeType = "add"
-								index += 1
-							else:
-								self.explodeType = "stack"
+							if index + 1 < len(commands):				
+								if commands[index+1] == "!":
+									self.explodeType = "add"
+									index += 1
+								else:
+									self.explodeType = "stack"
 
-							if "!" in commands[index+1:]:
-								self.result = self.__mult__
-								return self.result
+								if index + 1 < len(commands):
+									if "!" in commands[index+1:]:
+										self.result = self.__mult__
+										return self.result
 
-							if commands[index+1] == "+":
-								index += 1
+									if commands[index+1] == "+":
+										index += 1
 
 						# Actually set explosion number
 						try:
