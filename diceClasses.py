@@ -342,8 +342,8 @@ class Roll:
 			message = self.message
 
 		# The whole thing is in a try and will return ValueError on failure
-		if True:
-		# try:
+		# if True:
+		try:
 
 			# Clean up input
 			# Removes spaces, changes minus signs to deal with negative integers
@@ -379,6 +379,8 @@ class Roll:
 					commands = re.split(self.__commands__, roll)
 					commands = [item for item in commands if item != " "]
 					commands = [item for item in commands if item != ""]
+					commands = [item for item in commands if item != "+"]
+
 					temp = []
 					for n in range(len(commands)):
 						if commands[n] is "-":
@@ -403,9 +405,10 @@ class Roll:
 								pass
 
 						self.type = int(commands[index+1])
-						if index + 3 < len(commands):
-							if "+" in commands[index+2]:
-								self.bonus = int(commands[index+3])
+						try:
+							self.bonus = int(commands[index+2])
+						except:
+							pass
 
 					# Or interpret a single number as the bonus
 					else:
@@ -424,6 +427,9 @@ class Roll:
 
 						try:
 							self.drop = int(commands[index+1])
+							if index + 2 < len(commands):
+								if commands[index+2] == "d":
+									self.drop = 1
 						except:
 							self.drop = 1
 
@@ -442,10 +448,12 @@ class Roll:
 						self.__keepFlag__ = True
 						try:
 							self.drop = int(commands[index+1])
+							if index + 2 < len(commands):
+								if commands[index+2] == "d":
+									self.drop = 1
 						except:
 							self.drop = 1
 
-					print(commands)
 					# Three different explode commands
 					# Explosion 1
 					if "!" in commands:
@@ -464,9 +472,6 @@ class Roll:
 									if "!" in commands[index+1:]:
 										self.result = self.__mult__
 										return self.result
-
-									if commands[index+1] == "+":
-										index += 1
 
 						# Actually set explosion number
 						try:
@@ -561,5 +566,5 @@ class Roll:
 
 			return self.result
 
-		# except:
-			# return ValueError
+		except:
+			return ValueError
