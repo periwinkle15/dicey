@@ -61,67 +61,6 @@ You already found me!
 ```
 """
 
-simpleRollDoc = """
-```
-/roll [[iterations]x][[number]d[die type]][+/-[bonus]][other options][,[new roll]]
-Defaults to rolling 1d20
-
-[[iterations]x] has global scope; it applies to everything after it and cannot be repeated. It causes the same input to be used again; /roll 2x performs /roll twice.
-[number] on its own is interpreted as a bonus to the default roll.
-[xdy] rolls a y-sided die x times and adds together the results. If x is ommitted, it defaults to 1.
-[+ or - bonus] adds or subtracts a fixed amount to the total.
-[drop] drops the lowest N rolls from the total, where N defaults to 1 or can be set by appending an integer. It resets to 0 unless a roll is being repeated.
-[keep] keeps the lowest N rolls, dropping the higher from the total, where N defaults to 1 or can be set by appending an integer. It resets to 0 unless a roll is being repeated.
-[>/<[=]] sets a boundary above or below which rolls will be counted as a success, and reported as successes or failures instead of raw numbers.
-[!] causes World of Darkness style exploding dice (rolls above a certain value trigger a new roll). It applies to the total xdy+z, not to each individual dy. It defaults to the maximum number; set a boundary with [>[=]] or [<[=]].
-[!!] causes Shadowrun or Riddle of Steel style exploding dice, in which a new roll is added to the previous value.
-[,] allows you to enter a new roll. Instead of 1d20, defaults will be set by the previous roll. If a new die type is entered, "fancy" attributes like drop go back to default.
-
-Examples:
-		/roll
-		2
-		1d20: 2
-
-		/roll 2d10+2
-		13, 22
-		2d10+2: (5+6) + 2 = 13
-		2d10+2: (1+8) + 2 = 11
-
-		/roll 2x3d17+3,2 drop 2,d4
-		32, 4, 4, 40, 14, 3
-		3d17+3:  (17 + 7 + 5) + 3 = 32
-		3d17+2:  (2) + 2 = 4 (dropped 1, 1)
-		1d4:  4
-		3d17+3:  (15 + 16 + 6) + 3 = 40
-		3d17+2:  (12) + 2 = 14 (dropped 3, 8)
-		1d4:  3
-```
-"""
-
-cRollDoc = """
-```
-/croll [[number=1][die type]]...[[score][threshold]]
-Spaces don't matter. 
-
-Die Types:
-		b: Bonus dice (can't be chained with Penalty)
-		p: Penalty dice (can't be chained with Bonus)
-		t: Threshold to determine success/fail. Score is required if a threshold is set.
-
-Examples:
-		/croll
-		36
-
-		/croll 60t
-		Hard Success: 24
-
-		/croll b
-		70/30 + 5 = 35
-
-		/croll 2p70t
-		Failure: 0/50/70 + 4 = 74
-```
-"""
 mood = "/mood"
 music = "music"
 genericSearches = ["dungeon", "adventure", "rpg", "dungeons and dragons", "d&d", "background", "fantasy", "video game"]
@@ -419,6 +358,7 @@ async def on_message(message):
 			await message.channel.send(embed=em)	
 
 	elif message.content.startswith(mood):
+		await message.channel.send("Obtaining mood...")
 		await message.channel.send(getMood(message.content[len(mood):]))
 
 	# Cute extras
