@@ -290,7 +290,7 @@ class Roll:
 			bonusDesc = ') + ' + str(self.bonus)
 
 			# Show added bonus dice properly
-			if self.explode is not None and len(retList) > 0:
+			if self.explode is not None and len(retList) > 0 and depth == 0:
 				bonusDesc += '*' + str(len(retList) + 1)
 		desc = resultDesc + bonusDesc
 
@@ -354,7 +354,8 @@ class Roll:
 			message = self.message
 
 		# The whole thing is in a try and will return ValueError on failure
-		try:
+		if True:
+		# try:
 
 			# Clean up input
 			# Removes spaces, changes minus signs to deal with negative integers
@@ -403,7 +404,7 @@ class Roll:
 					commands = [item for item in commands if item != "-"]
 
 					# Now search through commands to apply each one.
-
+					print(commands)
 					# xdy+z syntax
 					if "d" in commands:
 						index = commands.index("d")
@@ -416,21 +417,23 @@ class Roll:
 						if index != 0:
 							try:
 								self.dice = int(commands[index-1])
-							except ValueError:
+							except:
 								pass
 
 						self.type = int(commands[index+1])
 						try:
 							self.bonus = int(commands[index+2])
-						except ValueError:
+						except:
 							pass
 
 					# If no d, interpret a single number as the bonus
 					else:
 						try:
 							self.bonus = int(commands[0])
-						except ValueError:
+						except:
 							pass
+
+					print('d')
 
 					# On to more complicated problems - drop and keep
 					if "drop" in commands:
@@ -450,8 +453,10 @@ class Roll:
 								# of a "d" command
 								if commands[index+2] == "d":
 									self.drop = 1
-						except ValueError:
+						except:
 							self.drop = 1
+
+					print("drop")
 
 					# Redo for the "keep" command
 					if "keep" in commands:
@@ -477,7 +482,7 @@ class Roll:
 								# of  "d" command
 								if commands[index+2] == "d":
 									self.drop = 1
-						except ValueError:
+						except:
 							self.drop = 1
 
 					# Explosion
@@ -501,7 +506,7 @@ class Roll:
 						# Actually set explosion number
 						try:
 							self.explode = int(commands[index+1])
-						except ValueError:
+						except:
 							self.explode = self.dice * self.type + self.bonus
 
 							# Look for comparison symbols
@@ -517,6 +522,7 @@ class Roll:
 									if "=" not in commands[index+1]:
 										self.explode -= 1
 
+					print("self.params")
 					# Set success threshhold
 					# A bit different from the others to handle notation
 					# overlap with exploding dice
@@ -562,6 +568,8 @@ class Roll:
 							self.result = self.__badExplode__
 							return self.result
 
+					print(self.params())
+
 					# Return roll
 					res = self.resolve()
 					if type(res) is str:
@@ -570,7 +578,9 @@ class Roll:
 					else:
 						self.result.extend(res)
 
+					print(self.params())
+
 			return self.result
 
-		except:
-			return ValueError
+		# except:
+		# 	return ValueError
