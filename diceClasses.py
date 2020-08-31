@@ -354,8 +354,7 @@ class Roll:
 			message = self.message
 
 		# The whole thing is in a try and will return ValueError on failure
-		if True:
-		# try:
+		try:
 
 			# Clean up input
 			# Removes spaces, changes minus signs to deal with negative integers
@@ -582,5 +581,5 @@ class Roll:
 
 			return self.result
 
-		# except:
-		# 	return ValueError
+		except:
+			return ValueError
