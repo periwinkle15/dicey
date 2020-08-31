@@ -83,6 +83,40 @@ Examples:
 ```
 """
 
+trosRollDoc = """
+```
+/tros [[iterations]x][[pool]/[target number]] OR simple roll[, [new roll]]
+Spaces don't matter. 
+
+Shortcuts for rolling The Riddle of Steel, based on their notation pool (number of dice rolled) / target number (success boundary). No modifiers or default values available.
+
+If the x/y notation is not used, the roll is resolved as if it were a simple roll. Simple roll iteration commands can be used.
+
+Examples:
+		/tros 4/7
+		1 Success(es)
+		Tyelcamo's roll
+		1d10 ≥ 7 !! ≥ 10:  5  < 7
+		1d10 ≥ 7 !! ≥ 10:  9  ≥ 7
+		1d10 ≥ 7 !! ≥ 10:  4  < 7
+		1d10 ≥ 7 !! ≥ 10:  2  < 7
+
+		/tros 2x3/6, 1d6
+		2 Success(es), 3, 1 Success(es), 1
+		Tyelcamo's roll
+		1d10 ≥ 6 !! ≥ 10:  4  < 6
+		1d10 ≥ 6 !! ≥ 10:  8  ≥ 6
+		1d10 ≥ 6 !! ≥ 10:  5  < 6
+		1d6:  3
+		1d10 ≥ 6 !! ≥ 10:  2  < 6
+		1d10 ≥ 6 !! ≥ 10:  5  < 6
+		1d10 ≥ 6 !! ≥ 10:  10 + 5 = 15  ≥ 6
+		Explosion:  1d10 !! ≥ 10:  5
+		1d6:  1
+
+```
+"""
+
 """
 Setup functions and classes
 """
@@ -105,29 +139,36 @@ class DiceResult:
 		self.colour = self.COL_NORM_SUCCESS
 
 class Roll:
+
+	# Basic attributes
+	dice = 1
+	bonus = 0
+	drop = 0
+	__keepFlag__ = False
+	__lessThanFlag__ = False
+	result = []
+
+	rollsLimit = 50
+	digitLimit = 10000
+
+	__commands__ = r"(drop|keep|>=|=>|<=|=<|/|[\+!><=d ])"
+	__fail__ = "Couldn't parse input. Use /help to get more information."
+	__mult__ = "Command appears more than once."
+	__incompatible__ = "Incompatible commands used."
+	__overRolls__ = "Sorry... I'd rather not print that many rolls."
+	__overDigits__ = "Hey! Stop trying to break me with big numbers :("
+	__badExplode__ = "I tried to explode the dice like you asked, but there were too many of them.\nWhatever you were doing, you probably won."
+
 	def __init__(self, message=None):
-		self.dice = 1
+		# Default setup for a D&D-style roller which can be
+		# modified to perform nearly any roll
+
 		self.type = 20
-		self.bonus = 0
-		self.drop = 0
-		self.__keepFlag__ = False
 		self.success = None
-		self.__lessThanFlag__ = False
 		self.explode = None
 		self.explodeType = "stack"
+
 		self.message = message
-		self.result = []
-
-		self.rollsLimit = 50
-		self.digitLimit = 10000
-
-		self.__commands__ = r"(drop|keep|>=|=>|<=|=<|[\+!><=d ])"
-		self.__fail__ = "Couldn't parse input. Use /help to get more information."
-		self.__mult__ = "Command appears more than once."
-		self.__incompatible__ = "Incompatible commands used."
-		self.__overRolls__ = "Sorry... I'd rather not print that many rolls."
-		self.__overDigits__ = "Hey! Stop trying to break me with big numbers :("
-		self.__badExplode__ = "I tried to explode the dice like you asked, but there were too many of them.\nWhatever you were doing, you probably won."
 
 		if self.message is not None:
 			self.parse()
@@ -259,11 +300,12 @@ class Roll:
 
 		# Success indicator
 		if self.success is not None:
-			if not self.__lessThanFlag__:
-				prelude += ' \u2265 ' 
-			else:
-				prelude += ' \u2264 '
-			prelude += str(self.success)
+			if depth == 0 or self.explodeType == "stack":
+				if not self.__lessThanFlag__:
+					prelude += ' \u2265 ' 
+				else:
+					prelude += ' \u2264 '
+				prelude += str(self.success)
 
 		# Explosion indicator
 		if self.explode is not None:
@@ -403,7 +445,6 @@ class Roll:
 					commands = [item for item in commands if item != "-"]
 
 					# Now search through commands to apply each one.
-					print(commands)
 					# xdy+z syntax
 					if "d" in commands:
 						index = commands.index("d")
@@ -432,8 +473,6 @@ class Roll:
 						except:
 							pass
 
-					print('d')
-
 					# On to more complicated problems - drop and keep
 					if "drop" in commands:
 						index = commands.index("drop")
@@ -454,8 +493,6 @@ class Roll:
 									self.drop = 1
 						except:
 							self.drop = 1
-
-					print("drop")
 
 					# Redo for the "keep" command
 					if "keep" in commands:
@@ -521,7 +558,6 @@ class Roll:
 									if "=" not in commands[index+1]:
 										self.explode -= 1
 
-					print("self.params")
 					# Set success threshhold
 					# A bit different from the others to handle notation
 					# overlap with exploding dice
@@ -567,8 +603,6 @@ class Roll:
 							self.result = self.__badExplode__
 							return self.result
 
-					print(self.params())
-
 					# Return roll
 					res = self.resolve()
 					if type(res) is str:
@@ -577,9 +611,199 @@ class Roll:
 					else:
 						self.result.extend(res)
 
-					print(self.params())
+			return self.result
+
+		except:
+			return ValueError
+
+	def format(self):
+		# D&D-style formatting
+
+		# If result was a string, something failed; send string.
+		if isinstance(self.result, str):
+			return self.result
+		elif ValueError in self.result:
+			return self.__fail__
+
+		# Else the function returns a list of DiceResult objects
+		# Concatenate them into a text box
+		else:
+			sendResult = DiceResult()
+
+			# Count successes; if there's a number result between strings
+			# of successes or failures, interrupt the count with the number
+			titles = [roll.title for roll in self.result]
+			sendResult.title = ""
+
+			successes = []
+			for title in titles:
+				# Build up success reports until interrupted
+				if title == "Success" or title == "Failure":
+					successes.append(title)
+				else:
+
+					# Report and reset successes
+					if successes != []:
+						# Add comma if necessary
+						if sendResult.title !=  "":
+							if sendResult.title[-1] != " ":
+								sendResult.title += ", "
+
+						sendResult.title += str(successes.count("Success")) + " Success(es)"
+						successes = []
+
+					# Check comma again
+					if sendResult.title !=  "":
+						if sendResult.title[-1] != " ":
+							sendResult.title += ", "
+
+					# Report number result
+					sendResult.title += title
+
+			# Check for success reports left over
+			if successes != []:
+				# Add comma if necessary
+				if sendResult.title !=  "":
+					if sendResult.title[-1] != " ":
+						sendResult.title += ", "
+
+				sendResult.title += str(successes.count("Success")) + " Success(es)"
+
+			# Set colour
+			if "Success" in titles or "Failure" in titles:
+
+				if titles.count("Success") == titles.count("Success") + titles.count("Failure"):
+					sendResult.colour = sendResult.COL_HARD_SUCCESS
+				elif "Success" not in titles:
+					sendResult.colour = sendResult.COL_NORM_FAILURE
+				else:
+					sendResult.colour = sendResult.COL_NORM_SUCCESS
+
+			sendResult.desc = str("\n".join([roll.desc for roll in self.result]))
+
+			if len(sendResult.title) > 256:
+				return self.__overRolls__
+			if len(sendResult.desc) >= 2048:
+				sendResult.desc = "description too long; surpressed"
+
+			return sendResult
+
+class RoS(Roll):
+
+	def __init__(self, message=None):
+		# Default setup for a The Riddle of Steel-style roller which can be
+		# can only take a few commands
+
+		self.type = 10
+		self.success = None
+		self.explode = self.type
+		self.explodeType = "add"
+
+		self.message = message
+
+		if self.message is not None:
+			self.parse()
+
+	def __reset__(self):
+		self.dice = 1
+		self.type = 10
+		self.bonus = 0
+		self.drop = 0
+		self.__keepFlag__ = False
+		self.success = None
+		self.__lessThanFlag__ = False
+		self.explode = self.type
+		self.__explodeFlag__ = False
+		self.explodeType = "add"
+
+	def parse(self, message=None):
+		"""
+		Does its level best to make sense of the raw input
+		and turn it into a series of xdy+z rolls 
+		"""
+
+		if message is None:
+			message = self.message
+
+		# The whole thing is in a try and will return ValueError on failure
+		try:
+
+			# Clean up input
+			# Removes spaces, changes minus signs to deal with negative integers
+			message = message.replace("-","+-")
+			message = message.replace("++", "+")
+
+			# Look for the x multiplier
+			multIndex = message.find("x")
+			if multIndex != -1:
+				iterations = int(message[:multIndex])
+				message = message[multIndex+1:]
+			else:
+				iterations = 1
+
+			# Split up different rolls
+			rolls = message.split(",")
+
+			# Check for excessively large number of loops being required
+			if len(rolls)*iterations > self.rollsLimit:
+				return self.__overRolls__
+
+			# Loop through rolls
+			self.result = []
+			for n in range(iterations):
+
+				# Defaults are reset each iteration to ensure the same result
+				self.__reset__()
+
+				for roll in rolls:
+
+					# Pass xdy style rolls back to the parent class
+					if "/" not in roll:
+						res = Roll(roll).result
+						if res is ValueError:
+							return ValueError
+						elif isinstance(res, str):
+							return res
+						else:
+							self.result.extend(res)
+
+					else:
+
+						# Regular expression matches all possible commands
+						# Note that order does matter to avoid collision
+						# between "drop" and "d"
+
+						commands = re.split(self.__commands__, roll)
+
+						# Clean up the result a bit.
+						commands = [item for item in commands if item != " "]
+						commands = [item for item in commands if item != ""]
+						commands = [item for item in commands if item != "+"]
+
+						for n in range(len(commands)):
+							if commands[n] is "-":
+								commands[n] = commands[n] + commands[n+1]
+
+						commands = [item for item in commands if item != "-"]
+
+						# The Riddle of Steel notates rolls with syntax
+						# Pool / Target Number
+
+						# Set success
+						index = commands.index("/")
+						self.success = int(commands[index+1])
+
+						# Roll targets
+						for i in range(int(commands[index-1])):
+							res = self.resolve()
+							if type(res) is str:
+								self.result = res
+								return self.result
+							else:
+								self.result.extend(res)
 
 			return self.result
 
 		except:
 			return ValueError
+

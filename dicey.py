@@ -32,10 +32,12 @@ discord.opus.load_opus
 
 cRoll = "/croll"
 simpleRoll = "/roll"
+trosRoll = "/tros"
 disconnect = "/disconnect"
 doc = "/help"
 simpleHelp = "/simplerollhelp"
 cRollHelp = "/cocrollhelp"
+trosRollHelp = "/trosrollhelp"
 
 fail = "Couldn't parse input. Use /help to get more information."
 
@@ -46,6 +48,9 @@ Use /SimpleRollHelp for info and examples.
 
 /croll [[number=1][b OR p]]...[[score][threshold]]
 Use /CoCRollHelp for info and examples.
+
+/tros [[iterations]x][[pool]/[target number]] OR simple roll[, [new roll]]
+Use /trosRollHelp for info and examples.
 
 /mood [random OR [search terms]]
 Sends a random youtube video found by searching rpg-background-music type keywords.
@@ -129,7 +134,7 @@ def ResolveCDice(BonusDie, PenaltyDie, Threshold):
 		desc += '(' + '/'.join([str(i*10) for i in TenResultPool]) + ')'
 	desc +=  ' + ' + str(OneResult) + ' = ' + str(CombinedResult)
 
-	# Set box color based on the given threshhold.
+	# Set box colour based on the given threshhold.
 	if Threshold:
 		ret = DiceResult()
 		ret.desc = desc
@@ -281,64 +286,55 @@ async def on_message(message):
 		author = message.author.name
 	author += "'s roll"
 
+	# Handle help requests
+	if parse == doc:
+		await message.channel.send(helpDoc)
+
+	elif parse == simpleHelp:
+		await message.channel.send(simpleRollDoc)
+
+	elif parse == cRollHelp:
+		await message.channel.send(cRollDoc)
+
+	elif parse == trosRollHelp:
+		await message.channel.send(trosRollDoc)
+
 	# Handle a /roll command
-	if parse.startswith(simpleRoll):
+	elif parse.startswith(simpleRoll):
 
 		roll = Roll(parse[len(simpleRoll):])
-		result = roll.result
+		result = roll.format()
 
 		# If result was a string, something failed; send string.
 		if isinstance(result, str):
 			await message.channel.send(result)
-		elif result is ValueError:
-			await message.channel.send(fail)
 
-		# Else the function returns a list of DiceResult objects
-		# Concatenate them into a text box
 		else:
-			# If all the titles are success/failure, do a count-successes thing instead
-			titles = [roll.title for roll in result]
-			successes = titles.count('Success')
+			print(result.desc)
+			em = discord.Embed(title = result.title,
+								description = author,
+								colour = result.colour)
+			em.set_footer(text = result.desc)
 
-			if all([i == 'Success' or i == 'Failure' for i in titles]):
-				em = discord.Embed(title = str(successes) + ' Success(es)')
-				if successes == 0:
-					em.color = COL_NORM_FAILURE
-				elif successes == len(titles):
-					em.color = COL_HARD_SUCCESS
-				else:
-					em.color = COL_NORM_SUCCESS
+			await message.channel.send(embed=em)
 
-			# Or count the successes, then display the base numbers
-			elif 'Success' in titles or 'Failure' in titles:
-				title = str(successes) + ' Success(es), '
-				title += ", ".join([i for i in titles if i != 'Success' and i != 'Failure' ])
+	# Handle a /tros command
+	elif parse.startswith(trosRoll):
 
-				em = discord.Embed(title = title)
+		roll = RoS(parse[len(trosRoll):])
+		result = roll.format()
 
-				if successes == 0:
-					em.color = COL_NORM_FAILURE
-				else:
-					em.color = COL_NORM_SUCCESS
+		# If result was a string, something failed; send string.
+		if isinstance(result, str):
+			await message.channel.send(result)
 
-			# Or just return the numbers
-			else:
-				em = discord.Embed(title=", ".join([i for i in titles]))
-				if len(titles) == 1:
-					em.color = result[0].colour
-				else:
-					em.color = COL_NORM_SUCCESS
+		else:
+			em = discord.Embed(title = result.title,
+								description = author,
+								colour = result.colour)
+			em.set_footer(text = result.desc)
 
-			em.set_footer(text = str("\n".join([roll.desc for roll in result])))
-			em.description = author
-
-			if len(em.title) > 256:
-				await message.channel.send("Too many results, couldn't send message.")
-			else:
-				if len(em.footer) >= 2048:
-					em.set_footer(text = "description too long; surpressed")
-
-				await message.channel.send(embed=em)
+			await message.channel.send(embed=em)
 
 	# Handle a /croll command
 	elif parse.startswith(cRoll):
@@ -377,16 +373,6 @@ async def on_message(message):
 		await message.channel.send("Dicey is disconnecting!")
 		# TBD: find better disconnect method
 		raise KeyboardInterrupt
-
-	# Handle help requests
-	elif parse == doc:
-		await message.channel.send(helpDoc)
-
-	elif parse == simpleHelp:
-		await message.channel.send(simpleRollDoc)
-
-	elif parse == cRollHelp:
-		await message.channel.send(cRollDoc)
 
 """
 Finally...
