@@ -1,2 +1,2 @@
 # dicey
-General-purpose dice rolling bot for discord; goal is to eventually develop roll20-style functionality.
+General-purpose dice rolling bot for discord; also has some useful (for me) shortcuts and "fun" extras.
