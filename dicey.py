@@ -9,6 +9,7 @@ Imports
 """
 
 import asyncio
+import csv
 import discord
 import logging
 from urllib import parse
@@ -41,6 +42,22 @@ trosRollHelp = "/trosrollhelp"
 
 fail = "Couldn't parse input. Use /help to get more information."
 
+mood = "/mood"
+music = "music"
+genericSearches = ["dungeon", "adventure", "rpg", "dungeons and dragons", "d&d", "background", "fantasy", "video game"]
+moodChoices = ["creepy", "epic", "battle", "crypt", "enchanted", "village", "woods", "winter", "city", "desert"]
+
+goodRobot = ["Thanks! :smile:", "I appreciate it!", "Always happy to help! :wink:", ":robot::heart_exclamation:"]
+badRobot = [":cry:", ":robot::broken_heart:", "I'm sorry... I'll try to do better."]*5+["Look, *you* try keeping track of all this math."]
+greetings = ["Hi!", "Hello!", "Happy to be here!"]
+greetRobot = ["hi", "hello", "meet", "here"]
+
+name = "/name"
+nameType = "/nametypes"
+nameFile = "nameList.csv"
+nameFail = "Sorry, you sent a specifier that's not used. Use /nametypes to see what's available."
+fileFail = "No name file (" + nameFile + ") found."
+
 helpDoc = """
 ```
 /roll [[iterations]x][[number]d[die type]][+[bonus]][other keys][,[new roll]]
@@ -58,6 +75,11 @@ No argument returns a generic video
 random returns a search with a an additional "mood" specifier chosen from a list of words like "battle," "creepy," etc.
 Or add your own search terms
 
+/name [origin] [label]
+Sends name chosen from a file in the same directory as Dicey's code, called """ + nameFile + """
+Origin and label are optional specifiers. 
+Use /nametypes for more info.
+
 /disconnect
 As on tin
 
@@ -65,16 +87,6 @@ As on tin
 You already found me!
 ```
 """
-
-mood = "/mood"
-music = "music"
-genericSearches = ["dungeon", "adventure", "rpg", "dungeons and dragons", "d&d", "background", "fantasy", "video game"]
-moodChoices = ["creepy", "epic", "battle", "crypt", "enchanted", "village", "woods", "winter", "city", "desert"]
-
-goodRobot = ["Thanks! :smile:", "I appreciate it!", "Always happy to help! :wink:", ":robot::heart_exclamation:"]
-badRobot = [":cry:", ":robot::broken_heart:", "I'm sorry... I'll try to do better."]*5+["Look, *you* try keeping track of all this math."]
-greetings = ["Hi!", "Hello!", "Happy to be here!"]
-greetRobot = ["hi", "hello", "meet", "here"]
 
 rollsLimit = 50
 digitLimit = 10000
@@ -91,148 +103,6 @@ COL_CRIT_FAILURE=0x992d22
 """
 Miscellaneous fun functions
 """
-
-def ResolveCDice(BonusDie, PenaltyDie, Threshold):
-	"""
-	Resolves a CoC-style d% roll with bonus and penalty dice
-	and a success threshold.
-	"""
-	TenResultPool = []
-	TenResultPool.append(RollDie(0, 9))
-
-	TenResult = min(TenResultPool)
-	OneResult = RollDie(0, 9)
-
-	if BonusDie > 0 and PenaltyDie > 0:
-		return "Can't chain bonus and penalty dice."
-
-	# Add bonus dice
-	for i in range(BonusDie):
-		TenResultPool.append(RollDie(0, 9))
-		TenResult = min(TenResultPool)
-
-		# Deal with the 00 0 = 100 case
-		if OneResult == 0 and TenResult == 0 and TenResultPool.count(0)!=len(TenResultPool):
-			TenResult = min([i for i in TenResultPool if i>0])
-
-	# OR add penalty dice
-	for i in range(PenaltyDie):
-		TenResultPool.append(RollDie(0, 9))
-		TenResult = max(TenResultPool)
-
-		# Deal with the 00 0 = 100 case
-		if 0 in TenResultPool and OneResult == 0:
-			TenResult = 0
-
-	# Find final result
-	CombinedResult = (TenResult*10) + OneResult
-	if CombinedResult == 0:
-		CombinedResult = 100
-
-	desc = str(TenResult*10)
-	if len(TenResultPool) > 1:
-		desc += '(' + '/'.join([str(i*10) for i in TenResultPool]) + ')'
-	desc +=  ' + ' + str(OneResult) + ' = ' + str(CombinedResult)
-
-	# Set box colour based on the given threshhold.
-	if Threshold:
-		ret = DiceResult()
-		ret.desc = desc
-		
-		if CombinedResult == 1:
-			ret.title = "Critical Success!"
-			ret.colour = COL_CRIT_SUCCESS
-		elif CombinedResult == 100:
-			ret.title = "Critical Failure!"
-			ret.colour = COL_CRIT_FAILURE
-		elif CombinedResult <= Threshold/5:
-			ret.title = "Extreme Success!"
-			ret.colour = COL_EXTR_SUCCESS
-		elif CombinedResult <= Threshold/2:
-			ret.title = "Hard Success!"
-			ret.colour = COL_HARD_SUCCESS
-		elif CombinedResult <= Threshold:
-			ret.title = "Success"
-			ret.colour = COL_NORM_SUCCESS
-		else:
-			ret.title = "Failure"
-			ret.desc = ret.desc + "\npush the rolllllllll"
-			ret.colour = COL_NORM_FAILURE
-
-		return ret
-	else:
-		ret = DiceResult()
-		ret.title = str(CombinedResult)
-		ret.desc = desc
-
-		return ret
-
-def parseCRoll(diceString):
-	"""
-	Attempts to parse raw input into a number of bonus or penalty dice, and a threshold
-	"""
-
-	# Searches for the die syntaxes.
-	dice=[x for x in re.split('(\d*?[bpt])',diceString) if x]
-
-	if len(dice) > 1 and 'b' in diceString and 'p' in diceString:
-		return "Can't chain bonus and penalty dice"
-		
-	BonusDie=0
-	PenaltyDie=0
-	Threshold=False
-
-	# Categorizes die types. Uses some fancy regular expression stuff
-	# from the original Dorian bot.
-	for die in dice:
-
-		default_num = False
-		s = re.search('(\d*?)([bpt])', die)
-		
-		if not s:
-			default_num = True
-			die = "1"+die
-		s = re.search('(\d*?)([bpt])', die)
-		
-		if not s:
-			return fail
-
-		g = s.groups()
-		
-		if len(g) != 2:
-			return fail
-		
-		try:
-			num = int(g[0])
-		except:
-			default_num = True
-			num = 1
-
-		dieCode=g[1]
-		
-		if len(dieCode) > 1:
-			return fail
-
-		# Set die numbers
-		if dieCode == 'b':
-			BonusDie = num
-
-		if dieCode == 'p':
-			PenaltyDie = num
-
-		if	dieCode == 't':
-			if default_num:
-				return "Threshold requires a value!"
-			else:
-				Threshold = num
-
-	# Check for invalid numbers
-	if any([BonusDie>rollsLimit, PenaltyDie>rollsLimit]):
-		return "Sorry... I'd rather not print that many rolls."
-	elif Threshold < 0 or Threshold > 100:
-		return "Invalid threshold - must be between 0 and 100."
-				
-	return ResolveCDice(BonusDie, PenaltyDie, Threshold)
 
 def getMood(searchString):
 
@@ -254,6 +124,91 @@ def getMood(searchString):
 		print(len(ydl.extract_info(f'ytsearch:{search}', download=False)['entries']))
 
 	return f"Search result : {video['webpage_url']}"
+
+def getName(nameString):
+
+	names = []
+	origins = []
+	labels = []
+
+	try:
+		with open(nameFile) as csvfile:
+			reader = csv.reader(csvfile)
+			for line in reader:
+				names.append(line[0])
+				origins.append(line[1])
+				labels.append(line[2])
+	except IOError:
+		return fileFail
+
+	origin = ""
+	label = ""
+
+	if " " in nameString:
+		origin = nameString.split(" ")[0]
+		label = nameString.split(" ")[-1]
+		if origin not in origins:
+			return nameFail
+		if label not in labels and label != "name":
+			return nameFail
+	elif nameString in origins:
+		origin = nameString
+	elif nameString in labels or nameString == "name":
+		label = nameString
+	elif nameString == "":
+		label = "name"
+	elif nameString != "":
+		return nameFail
+
+	if label == "":
+		label = "name"
+
+	originNames = names.copy()
+	labelNames = names.copy()
+	if origin != "":
+		originNames = [names[i] for i in range(len(names)) if origins[i] == origin]
+	if label != "name":
+		labelNames = [names[i] for i in range(len(names)) if labels[i] == label]
+	else:
+		labelNames = [names[i] for i in range(len(names)) if labels[i] == "male" or labels[i] == "female"]
+
+	nameList = [item for item in originNames if item in labelNames]
+
+	if len(nameList) == 0:
+		return "Sorry, no names that match your request."
+
+	return choice(nameList)
+
+def getNameTypes():
+
+	origins = []
+	labels = []
+	try:
+		with open(nameFile) as csvfile:
+			reader = csv.reader(csvfile)
+			for line in reader:
+				origins.append(line[1])
+				labels.append(line[2])
+	except IOError:
+		return fileFail
+
+	origins = list(set(origins))
+	labels = list(set(labels))
+
+	origins.sort()
+	labels.sort()
+
+	returnString = """
+	```
+Available name types:
+Origins: """ + ", ".join(origins) + """
+Labels: """ + ", ".join(labels) + """, name
+
+Request names with /name [origin] [label]. Both inputs are optional.
+The 'name' label will search over both male and female names. If no label is given, 'name' is used as the default.
+```"""
+
+	return returnString
 
 """
 Functions that handle Discord events.
@@ -310,7 +265,6 @@ async def on_message(message):
 			await message.channel.send(result)
 
 		else:
-			print(result.desc)
 			em = discord.Embed(title = result.title,
 								description = author,
 								colour = result.colour)
@@ -338,24 +292,30 @@ async def on_message(message):
 
 	# Handle a /croll command
 	elif parse.startswith(cRoll):
-		result = parseCRoll(parse[len(cRoll):])
+		roll = CoC(parse[len(cRoll):])
+		result = roll.format()
 
 		# If result was a string, something failed; send string.
 		if isinstance(result, str):
 			await message.channel.send(result)
 
-		# Else the function returns DiceResult object
-		# Concatenate them into a text box
 		else:
-			em = discord.Embed(title=result.title, colour=result.colour)
-			em.set_footer(text=result.desc)
-			em.description = author
+			em = discord.Embed(title = result.title,
+								description = author,
+								colour = result.colour)
+			em.set_footer(text = result.desc)
 
-			await message.channel.send(embed=em)	
+			await message.channel.send(embed=em)
 
 	elif message.content.startswith(mood):
 		await message.channel.send("Obtaining mood...")
 		await message.channel.send(getMood(message.content[len(mood):]))
+
+	elif message.content.startswith(nameType):
+		await message.channel.send(getNameTypes())
+
+	elif message.content.startswith(name):
+		await message.channel.send(getName(message.content[len(name):].strip().lower()))
 
 	# Cute extras
 	elif "badrobot" in parse.replace(" ", "") or "badbot" in parse.replace(" ", "") and "not" not in parse:

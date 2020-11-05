@@ -101,7 +101,7 @@ Examples:
 		1d10 ≥ 7 !! ≥ 10:  4  < 7
 		1d10 ≥ 7 !! ≥ 10:  2  < 7
 
-		/tros 2x3/6, 1d6
+		/tros 2x 3/6, 1d6
 		2 Success(es), 3, 1 Success(es), 1
 		Tyelcamo's roll
 		1d10 ≥ 6 !! ≥ 10:  4  < 6
@@ -145,7 +145,6 @@ class Roll:
 	bonus = 0
 	drop = 0
 	__keepFlag__ = False
-	__lessThanFlag__ = False
 	result = []
 
 	rollsLimit = 50
@@ -165,6 +164,7 @@ class Roll:
 
 		self.type = 20
 		self.success = None
+		self.__lessThanFlag__ = False
 		self.explode = None
 		self.explodeType = "stack"
 
@@ -595,13 +595,14 @@ class Roll:
 						return self.result
 					# Too many rolls
 					if self.dice > self.rollsLimit:
-						self.result = __overRolls__
+						self.result = self.__overRolls__
 						return self.result
+					#TODO: Something's wrong with this calculation.
 					# Infini-explode
-					if self.explode is not None:
-						if self.dice * self.type + self.bonus - self.explode == 1:
-							self.result = self.__badExplode__
-							return self.result
+					# if self.explode is not None:
+					# 	if self.dice * self.type + self.bonus - self.explode == 1:
+					# 		self.result = self.__badExplode__
+					# 		return self.result
 
 					# Return roll
 					res = self.resolve()
@@ -614,15 +615,18 @@ class Roll:
 			return self.result
 
 		except:
+			self.result = self.__fail__
 			return ValueError
 
 	def format(self):
-		# D&D-style formatting
+		# Turns results into a nice single-message format
 
 		# If result was a string, something failed; send string.
 		if isinstance(self.result, str):
 			return self.result
-		elif ValueError in self.result:
+		elif self.result is ValueError:
+			return self.result
+		elif any([item is ValueError or isinstance(item, str) for item in self.result]):
 			return self.__fail__
 
 		# Else the function returns a list of DiceResult objects
@@ -670,7 +674,9 @@ class Roll:
 				sendResult.title += str(successes.count("Success")) + " Success(es)"
 
 			# Set colour
-			if "Success" in titles or "Failure" in titles:
+			if len(self.result) == 1 and self.result[0].colour != self.result[0].COL_NORM_SUCCESS:
+				sendResult.colour = self.result[0].colour
+			elif "Success" in titles or "Failure" in titles:
 
 				if titles.count("Success") == titles.count("Success") + titles.count("Failure"):
 					sendResult.colour = sendResult.COL_HARD_SUCCESS
@@ -688,14 +694,178 @@ class Roll:
 
 			return sendResult
 
+class CoC(Roll):
+
+	def __init__(self, message=None):
+		# Default setup for The Call of Cthulhu-style roller which
+		# can only take a few commands
+
+		self.type = 100
+		self.success = None
+		self.__lessThanFlag__ = True
+		self.explode = None
+		self.explodeType = "stack"
+
+		self.message = message
+
+		if self.message is not None:
+			self.parse()
+
+	def __reset__(self):
+		self.dice = 1
+		self.type = 100
+		self.bonus = 0
+		self.drop = 0
+		self.__keepFlag__ = False
+		self.success = None
+		self.__lessThanFlag__ = True
+		self.explode = None
+		self.__explodeFlag__ = False
+		self.explodeType = "stack"	
+
+	def resolve(self):
+		"""
+		Resolves a CoC-style d% roll with bonus and penalty dice
+		and a success threshold.
+		"""
+		TenResultPool = []
+		TenResultPool.append(self.rollDie(0, 9))
+
+		TenResult = min(TenResultPool)
+		OneResult = self.rollDie(0, 9)
+
+		if not self.__keepFlag__:
+			# Add bonus dice
+			for i in range(self.drop):
+				TenResultPool.append(self.rollDie(0, 9))
+				TenResult = min(TenResultPool)
+
+				# Deal with the 00 0 = 100 case
+				if OneResult == 0 and TenResult == 0 and TenResultPool.count(0)!=len(TenResultPool):
+					TenResult = min([i for i in TenResultPool if i>0])
+		else:
+			# OR add penalty dice
+			for i in range(self.drop):
+				TenResultPool.append(self.rollDie(0, 9))
+				TenResult = max(TenResultPool)
+
+				# Deal with the 00 0 = 100 case
+				if 0 in TenResultPool and OneResult == 0:
+					TenResult = 0
+
+		# Find final result
+		CombinedResult = (TenResult*10) + OneResult
+		if CombinedResult == 0:
+			CombinedResult = 100
+
+		desc = "1d%: " + str(TenResult*10)
+		if len(TenResultPool) > 1:
+			desc += '(' + '/'.join([str(i*10) for i in TenResultPool]) + ')'
+		desc +=  ' + ' + str(OneResult) + ' = ' + str(CombinedResult)
+
+		# Set box colour based on the given threshhold.
+		ret = DiceResult()
+		ret.desc = desc
+		if self.success is not None:	
+			if CombinedResult == 1:
+				ret.title = "Critical Success!"
+				ret.colour = ret.COL_CRIT_SUCCESS
+			elif CombinedResult == 100:
+				ret.title = "Critical Failure!"
+				ret.colour = ret.COL_CRIT_FAILURE
+			elif CombinedResult <= self.success/5:
+				ret.title = "Extreme Success!"
+				ret.colour = ret.COL_EXTR_SUCCESS
+			elif CombinedResult <= self.success/2:
+				ret.title = "Hard Success!"
+				ret.colour = ret.COL_HARD_SUCCESS
+			elif CombinedResult <= self.success:
+				ret.title = "Success"
+				ret.colour = ret.COL_NORM_SUCCESS
+			else:
+				ret.title = "Failure"
+				ret.desc = ret.desc + "\npush the rolllllllll"
+				ret.colour = ret.COL_NORM_FAILURE
+		else:
+			ret.title = str(CombinedResult)
+
+		return [ret]
+
+	def parse(self, message=None):
+
+		if message is None:
+			message = self.message
+
+		self.result = []
+
+		# try:
+		if True:
+			# Searches for the die syntaxes.
+			commands = [item for item in re.split(r"([bpt])", message) if item != " " and item != ""]
+
+			print(commands)
+
+			if "p" in commands and "b" in commands:
+				print('fail1')
+				self.result = self.__mult__
+				return self.result
+
+			for i in range(len(commands)):
+				if commands[i] == "b" or commands[i] == "p":
+					try:
+						self.drop = int(commands[i-1])
+					except:
+						self.drop = 1
+					if commands[i] == "p":
+						self.__keepFlag__ = True
+				elif commands[i] == "t":
+					try:
+						self.success = int(commands[i-1])
+					except:
+						self.result = self.__incompatible__
+						return self.result
+				else:
+					try:
+						int(commands[i])
+					except:
+						self.result = self.__fail__
+						return self.result
+
+			# Check for bad numbers
+			# Might add more to these later.
+			# Too many digits
+			if any([abs(i[1]) > self.digitLimit for i in self.params().items() if type(i[1]) is int]):
+				self.result = self.__overDigits__
+				return self.result
+			# Too many rolls
+			if self.dice > self.rollsLimit:
+				self.result = self.__overRolls__
+				return self.result
+
+			# Return roll
+			res = self.resolve()
+			if type(res) is str:
+				self.result = res
+				return self.result
+			else:
+				self.result.extend(res)
+
+			return self.result
+
+		# except:
+		# 	self.result = self.__fail__
+		# 	return ValueError
+
+
 class RoS(Roll):
 
 	def __init__(self, message=None):
-		# Default setup for a The Riddle of Steel-style roller which can be
+		# Default setup for a The Riddle of Steel-style roller which
 		# can only take a few commands
 
 		self.type = 10
 		self.success = None
+		self.__lessThanFlag__ = False
 		self.explode = self.type
 		self.explodeType = "add"
 
@@ -805,5 +975,6 @@ class RoS(Roll):
 			return self.result
 
 		except:
+			self.result = self.__fail__
 			return ValueError
 
