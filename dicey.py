@@ -12,12 +12,9 @@ import asyncio
 import csv
 import discord
 import logging
-from urllib import parse
-from urllib import request
+from numpy import floor
 from random import choice
 from random import randint
-import re
-import youtube_dl
 
 from diceClasses import *
 from dicey_token import token
@@ -42,11 +39,6 @@ trosRollHelp = "/trosrollhelp"
 
 fail = "Couldn't parse input. Use /help to get more information."
 
-mood = "/mood"
-music = "music"
-genericSearches = ["dungeon", "adventure", "rpg", "dungeons and dragons", "d&d", "background", "fantasy", "video game"]
-moodChoices = ["creepy", "epic", "battle", "crypt", "enchanted", "village", "woods", "winter", "city", "desert"]
-
 goodRobot = ["Thanks! :smile:", "I appreciate it!", "Always happy to help! :wink:", ":robot::heart_exclamation:"]
 badRobot = [":cry:", ":robot::broken_heart:", "I'm sorry... I'll try to do better."]*5+["Look, *you* try keeping track of all this math."]
 greetings = ["Hi!", "Hello!", "Happy to be here!"]
@@ -57,6 +49,8 @@ nameType = "/nametypes"
 nameFile = "nameList.csv"
 nameFail = "Sorry, you sent a specifier that's not used. Use /nametypes to see what's available."
 fileFail = "No name file (" + nameFile + ") found."
+
+turn = "/turn"
 
 helpDoc = """
 ```
@@ -69,16 +63,13 @@ Use /CoCRollHelp for info and examples.
 /tros [[iterations]x][[pool]/[target number]] OR simple roll[, [new roll]]
 Use /trosRollHelp for info and examples.
 
-/mood [random OR [search terms]]
-Sends a random youtube video found by searching rpg-background-music type keywords.
-No argument returns a generic video
-random returns a search with a an additional "mood" specifier chosen from a list of words like "battle," "creepy," etc.
-Or add your own search terms
-
 /name [origin] [label]
 Sends name chosen from a file in the same directory as Dicey's code, called """ + nameFile + """
 Origin and label are optional specifiers. 
 Use /nametypes for more info.
+
+/turn [level] [charisma bonus]
+Rolls a 3.5E D&D turning check.
 
 /disconnect
 As on tin
@@ -103,27 +94,6 @@ COL_CRIT_FAILURE=0x992d22
 """
 Miscellaneous fun functions
 """
-
-def getMood(searchString):
-
-	search = " ".join([choice(genericSearches) for i in range(randint(1, 3))])
-
-	if "random" in searchString:
-		search += " " + " ".join([choice(moodChoices) for i in range(randint(1, 2))])
-	elif searchString != "":
-		search += " " + searchString
-
-	search += " " + music
-
-	ydl_opts = {'format': 'bestaudio', 'noplaylist': True, 'no_warnings': True, "include ads": False, 
-				"skip_downloads": True, "simulate": True, "age_limit": 13,}
-
-	with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-
-		video = ydl.extract_info(f'ytsearch:{search}', download=False)['entries'][0]
-		print(len(ydl.extract_info(f'ytsearch:{search}', download=False)['entries']))
-
-	return f"Search result : {video['webpage_url']}"
 
 def getName(nameString):
 
@@ -209,6 +179,32 @@ The 'name' label will search over both male and female names. If no label is giv
 ```"""
 
 	return returnString
+
+def getTurn(turnString):
+
+	parse = turnString.strip().split(" ")
+
+	level = int(parse[0])
+	charisma = int(parse[1])
+
+	maxHD = level + floor((randint(1, 20) + charisma - 10)/3)
+	if maxHD < level - 4:
+		maxHD = level - 4
+	elif maxHD > level + 4:
+		maxHD = level + 4
+
+	damage = randint(1, 6) + randint (1, 6) + level + charisma
+
+	damage = int(damage)
+	maxHD = int(maxHD)
+
+	footer = "You can turn " + str(damage) + " HD of undead.\n"
+	footer += "The highest HD undead you can turn is " + str(maxHD) + " HD.\n"
+	footer += "You can destroy undead of " + str(int(floor(level/2.0))) + " HD or lower."
+
+	title = str(damage) + " HD damage, " + str(maxHD) + " HD max"
+
+	return title, footer
 
 """
 Functions that handle Discord events.
@@ -307,14 +303,19 @@ async def on_message(message):
 
 			await message.channel.send(embed=em)
 
-	elif message.content.startswith(mood):
-		await message.channel.send("Obtaining mood...")
-		await message.channel.send(getMood(message.content[len(mood):]))
-
-	elif message.content.startswith(nameType):
+	elif parse.startswith(nameType):
 		await message.channel.send(getNameTypes())
 
-	elif message.content.startswith(name):
+	elif parse.startswith(turn):
+		title, footer = getTurn(parse[len(turn):])
+		em = discord.Embed(title = title,
+							description = author,
+							colour = 0x2e71cc)
+		em.set_footer(text = footer)
+
+		await message.channel.send(embed=em)
+
+	elif parse.startswith(name):
 		await message.channel.send(getName(message.content[len(name):].strip().lower()))
 
 	# Cute extras
