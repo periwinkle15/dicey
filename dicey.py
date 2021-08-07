@@ -12,9 +12,11 @@ import asyncio
 import csv
 import discord
 import logging
+import urllib.request
 from numpy import floor
 from random import choice
 from random import randint
+from urllib.parse import quote
 
 from diceClasses import *
 from dicey_token import token
@@ -44,6 +46,11 @@ badRobot = [":cry:", ":robot::broken_heart:", "I'm sorry... I'll try to do bette
 greetings = ["Hi!", "Hello!", "Happy to be here!"]
 greetRobot = ["hi", "hello", "meet", "here"]
 
+mood = "/mood"
+music = "music"
+genericSearches = ["dungeon", "adventure", "rpg", "dungeons and dragons", "d&d", "background", "fantasy", "video game"]
+moodChoices = ["creepy", "epic", "battle", "crypt", "enchanted", "village", "woods", "winter", "city", "desert"]
+
 name = "/name"
 nameType = "/nametypes"
 nameFile = "nameList.csv"
@@ -62,6 +69,11 @@ Use /CoCRollHelp for info and examples.
 
 /tros [[iterations]x][[pool]/[target number]] OR simple roll[, [new roll]]
 Use /trosRollHelp for info and examples.
+
+/mood [search terms]
+Sends a random youtube video found by searching rpg-background-music type keywords.
+No argument returns a generic video chosen from a list of words (like "battle," "village," etc.)
+Or add your own search terms
 
 /name [origin] [label]
 Sends name chosen from a file in the same directory as Dicey's code, called """ + nameFile + """
@@ -94,6 +106,29 @@ COL_CRIT_FAILURE=0x992d22
 """
 Miscellaneous fun functions
 """
+
+def getMood(searchString):
+
+	search = " ".join([choice(genericSearches) for i in range(randint(1, 2))])
+
+	if searchString == "":
+		search += " " + " ".join([choice(moodChoices) for i in range(randint(1, 2))])
+	elif searchString != "":
+		search += quote(searchString)
+
+	search += " " + music
+	search = search.replace(" ", "+")
+
+	page = urllib.request.urlopen('https://www.youtube.com/results?search_query=' + search)
+	html = str(page.read())
+
+	results = []
+	for i in range(len(html)-9):
+	    if html[i:i+9] == "/watch?v=":
+	    	results.append(html[i:i+20])
+
+	return "https://www.youtube.com" + choice(results[:max([5, len(results)])])
+
 
 def getName(nameString):
 
@@ -219,6 +254,7 @@ async def on_ready():
 	print("Dicey connected")
 	if FirstConnect:
 		FirstConnect = False
+	await client.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="/roll, /help"))
 
 @client.event
 async def on_message(message):
@@ -302,6 +338,9 @@ async def on_message(message):
 			em.set_footer(text = result.desc)
 
 			await message.channel.send(embed=em)
+
+	elif message.content.startswith(mood):
+		await message.channel.send(getMood(message.content[len(mood):]))
 
 	elif parse.startswith(nameType):
 		await message.channel.send(getNameTypes())
