@@ -416,6 +416,7 @@ class Roll:
 
 			# Check for excessively large number of loops being required
 			if len(rolls)*iterations > self.rollsLimit:
+				self.result = self.__overRolls__
 				return self.__overRolls__
 
 			# Loop through rolls
@@ -440,9 +441,13 @@ class Roll:
 
 					for n in range(len(commands)):
 						if commands[n] is "-":
-							commands[n] = commands[n] + commands[n+1]
+							commands[n+1] = commands[n] + commands[n+1]
 
 					commands = [item for item in commands if item != "-"]
+
+					if commands.count("d") > 1:
+						self.result = "I can't do dice addition yet, sorry."
+						return self.result
 
 					# Now search through commands to apply each one.
 					# xdy+z syntax
@@ -458,7 +463,7 @@ class Roll:
 							try:
 								self.dice = int(commands[index-1])
 							except:
-								pass
+								raise ValueError
 
 						self.type = int(commands[index+1])
 						try:
