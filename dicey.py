@@ -47,7 +47,6 @@ greetings = ["Hi!", "Hello!", "Happy to be here!"]
 greetRobot = ["hi", "hello", "meet", "here"]
 
 mood = "/mood"
-music = "music"
 genericSearches = ["dungeon", "adventure", "rpg", "dungeons and dragons", "d&d", "background", "fantasy", "video game"]
 moodChoices = ["creepy", "epic", "battle", "crypt", "enchanted", "village", "woods", "winter", "city", "desert"]
 
@@ -109,15 +108,17 @@ Miscellaneous fun functions
 
 def getMood(searchString):
 
-	search = " ".join([choice(genericSearches) for i in range(randint(1, 2))])
-
 	if searchString == "":
-		search += " " + " ".join([choice(moodChoices) for i in range(randint(1, 2))])
-	elif searchString != "":
-		search += quote(searchString)
+		search = " ".join([choice(moodChoices) for i in range(randint(1, 2))])
+	else:
+		#search = "\"" + searchString + "\""
+		search = searchString.strip()
 
-	search += " " + music
-	search = search.replace(" ", "+")
+	#search += " " + choice(genericSearches)
+	search += " music"
+	search = quote(search)
+
+	print("Searching youtube for " + search)
 
 	page = urllib.request.urlopen('https://www.youtube.com/results?search_query=' + search)
 	html = str(page.read())
