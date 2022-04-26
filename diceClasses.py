@@ -423,10 +423,10 @@ class Roll:
 			self.result = []
 			for n in range(iterations):
 
-				# Defaults are reset each iteration to ensure the same result
-				self.__reset__()
-
 				for roll in rolls:
+
+					# Defaults are reset each iteration to ensure the same result
+					self.__reset__()
 
 					# Regular expression matches all possible commands
 					# Note that order does matter to avoid collision

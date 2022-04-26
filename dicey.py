@@ -11,7 +11,10 @@ Imports
 import asyncio
 import csv
 import discord
+import json
 import logging
+import os
+import re
 import urllib.request
 from numpy import floor
 from random import choice
@@ -56,6 +59,26 @@ nameFile = "nameList.csv"
 nameFail = "Sorry, you sent a specifier that's not used. Use /nametypes to see what's available."
 fileFail = "No name file (" + nameFile + ") found."
 
+save = "/save"
+useSaved = "/saved"
+rollsFile = "customRolls.json"
+delete = "/delete"
+getCommandsList = "/commands"
+saveHelp = "/savehelp"
+saveDoc = """
+```
+Dicey can save up to 1000 custom commands to be accessed later.
+In your command name, use only ASCII characters and do not use spaces.
+Uses the file """ + rollsFile + """ in the same directory as Dicey's code.
+Commands are specific to the computer Dicey is running on!
+
+/save [name] [command] saves a simple roll command under "name" and sends an example roll. This will NOT overwrite an existing command. Make sure you put a space between [name] and [command].
+/saved [name] accesses the saved command "name"
+/delete [name] deletes command "name"
+/commands sends a list of all available custom commands. This may be long!
+```
+"""
+
 turn = "/turn"
 
 helpDoc = """
@@ -81,6 +104,11 @@ Use /nametypes for more info.
 
 /turn [level] [charisma bonus]
 Rolls a 3.5E D&D turning check.
+
+/save [name] [command]
+Saves a simple roll command under a custom name, saved in Dicey's code directory under """ + rollsFile + """
+Acceess with /saved, delete with /delete, see options with /commands
+See /saveHelp for more info
 
 /disconnect
 As on tin
@@ -242,6 +270,180 @@ def getTurn(turnString):
 
 	return title, footer
 
+def saveCommand(commandString):
+	"""
+	Save a custom roll command
+	"""
+
+	if not os.path.exists(rollsFile):
+		open(rollsFile, 'x').close()
+
+	result = ""
+	index = commandString.find(" ")
+	if index == -1:
+		send = "I need you to put a space between your command name and the roll so I can tell the difference."
+	else:
+		name = commandString[:index]
+		if not str.isascii(name):
+			send = "Please only use ASCII characters in your command name :pleading_face:"
+		elif len(name) > 50:
+			send = "That's more than 50 characters long. Try a shorter commands name."
+		else:
+
+			roll = Roll(commandString[index:].lower().strip())
+			result = roll.format()
+
+			# If result was a string, something failed; send string.
+			if isinstance(result, str):
+				send = "Your roll command failed :cry: :\n" + result
+
+			else:
+
+				splitDesc = re.split(r":|\n", result.desc)
+
+				descriptionList = []
+				for n in range(0, len(splitDesc), 2):
+					description = splitDesc[n]
+					if "keep" in splitDesc[n+1]:
+						description += " keep " + str(splitDesc[n+1].count(",") + 1)
+					if "drop" in splitDesc[n+1]:
+						description += " drop " + str(splitDesc[n+1].count(",") + 1)
+
+					descriptionList.append(description)
+
+				cleanDesc = ", ".join(descriptionList)
+
+				cleanDesc = cleanDesc.replace("\u2265", ">=")
+				cleanDesc = cleanDesc.replace("\u2264", "<=")
+
+				printDesc = cleanDesc
+				if len(cleanDesc) > 50:
+					printDesc = cleanDesc[:50] + "..."
+
+				with open(rollsFile, 'r') as jsonFile:
+					dictString = jsonFile.read()
+
+				if len(dictString) == 0:
+					commandsDict = {}
+				else:
+					try:
+						with open(rollsFile, 'r') as jsonFile:
+							commandsDict = json.load(jsonFile)
+					except:
+						send = "There was an error in the format of " + rollsFile
+						result = ""
+						return send, result
+
+				if name in commandsDict.keys():
+					send = "Command name already in use as " + commandsDict[name] + ". Delete it first to use this name."
+					result = ""
+				elif len(commandsDict) > 1000:
+					send = "I already have 1000 commands saved, to conserve space I won't save any more."
+				else:
+					commandsDict[name] = cleanDesc
+
+					with open(rollsFile, 'w') as jsonFile:
+						json.dump(commandsDict, jsonFile)
+
+					send = "Saving command name '" + name + "' as " + printDesc + ". Here's an example:\n"
+
+	return send, result
+
+
+def deleteCommand(commandString):
+
+	if not os.path.exists(rollsFile):
+		open(rollsFile, 'x').close()
+
+	with open(rollsFile, 'r') as jsonFile:
+		dictString = jsonFile.read()
+
+	if len(dictString) == 0:
+		commandsDict = {}
+	else:
+		try:
+			with open(rollsFile, 'r') as jsonFile:
+				commandsDict = json.load(jsonFile)
+		except:
+			send = "There was an error in the format of " + rollsFile
+			return send
+
+		if commandString not in commandsDict.keys():
+			result = "Command not found. Nothing deleted."
+		else:
+			command = commandsDict[commandString]
+			commandsDict.pop(commandString)
+
+			if len(command) > 50:
+				command = command[:50] + "..."
+
+			result = "Deleted command '" + commandString + "' " + command
+
+			with open(rollsFile, 'w') as jsonFile:
+				json.dump(commandsDict, jsonFile)			
+
+	return result
+
+
+def getCommand(commandString):
+
+
+	if not os.path.exists(rollsFile):
+		open(rollsFile, 'x').close()
+
+	with open(rollsFile, 'r') as jsonFile:
+		dictString = jsonFile.read()
+
+	if len(dictString) == 0:
+		commandsDict = {}
+	else:
+		try:
+			with open(rollsFile, 'r') as jsonFile:
+				commandsDict = json.load(jsonFile)
+		except:
+			result = "There was an error in the format of " + rollsFile
+			return result
+
+		if commandString not in commandsDict.keys():
+			result = "Command not found."
+		else:
+			command = commandsDict[commandString]
+
+			roll = Roll(command)
+			result = roll.format()
+
+	return result
+
+def getCommands():
+
+	if not os.path.exists(rollsFile):
+		open(rollsFile, 'x').close()
+
+	with open(rollsFile, 'r') as jsonFile:
+		dictString = jsonFile.read()
+
+	if len(dictString) == 0:
+		commandsDict = {}
+	else:
+		try:
+			with open(rollsFile, 'r') as jsonFile:
+				commandsDict = json.load(jsonFile)
+		except:
+			result = "There was an error in the format of " + rollsFile
+			return result
+
+		commands = []
+		for key in sorted(commandsDict):
+			command = key + ": " + commandsDict[key]
+			if len(command) > 100:
+				command = command[:100] + "..."
+
+			commands.append(command)
+
+		result = "\n".join(commands)
+
+	return result
+
 """
 Functions that handle Discord events.
 """
@@ -304,6 +506,55 @@ async def on_message(message):
 			em.set_footer(text = result.desc)
 
 			await message.channel.send(embed=em)
+
+	elif parse.startswith(useSaved):
+
+		result = getCommand(message.content[len(useSaved):].strip())
+
+		# If result was a string, something failed; send string.
+		if isinstance(result, str):
+			await message.channel.send(result)
+
+		else:
+			em = discord.Embed(title = result.title,
+								description = author,
+								colour = result.colour)
+			em.set_footer(text = result.desc)
+
+			await message.channel.send(embed=em)
+
+	elif parse.startswith(saveHelp):
+		await message.channel.send(saveDoc)
+
+	elif parse.startswith(save):
+		send, result = saveCommand(message.content[len(save):].strip())
+		if not (isinstance(result, str)):
+			em = discord.Embed(title = result.title,
+								description = author,
+								colour = result.colour)
+			em.set_footer(text = result.desc)
+			await message.channel.send(send, embed=em)
+		else:
+			await message.channel.send(send)
+
+	elif parse.startswith(delete):
+		result = deleteCommand(message.content[len(delete):].strip())
+		await message.channel.send(result)
+
+	elif parse.startswith(getCommandsList):
+		result = getCommands()
+
+		if len(result) < 1000:
+			await message.channel.send(result)
+		else:
+			commands = result.split("\n")
+
+			sendList = []
+			for n in (0, len(commands), 20):
+				sendList.append("\n".join(commands[n:n+20]))
+
+			for message in sendList:
+				await message.channel.send(message)
 
 	# Handle a /tros command
 	elif parse.startswith(trosRoll):
