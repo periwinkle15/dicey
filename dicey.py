@@ -33,38 +33,41 @@ logging.basicConfig(level=logging.INFO)
 client = discord.Client()
 discord.opus.load_opus
 
-cRoll = "/croll"
-simpleRoll = "/roll"
-trosRoll = "/tros"
-disconnect = "/disconnect"
-doc = "/help"
-simpleHelp = "/simplerollhelp"
-cRollHelp = "/cocrollhelp"
-trosRollHelp = "/trosrollhelp"
+prefix = "$"
 
-fail = "Couldn't parse input. Use /help to get more information."
+
+cRoll = prefix + "croll"
+simpleRoll = prefix + "roll"
+trosRoll = prefix + "tros"
+disconnect = prefix + "disconnect"
+doc = prefix + "help"
+simpleHelp = prefix + "simplerollhelp"
+cRollHelp = prefix + "cocrollhelp"
+trosRollHelp = prefix + "trosrollhelp"
+
+fail = "Couldn't parse input. Use "+prefix+"help to get more information."
 
 goodRobot = ["Thanks! :smile:", "I appreciate it!", "Always happy to help! :wink:", ":robot::heart_exclamation:"]
 badRobot = [":cry:", ":robot::broken_heart:", "I'm sorry... I'll try to do better."]*5+["Look, *you* try keeping track of all this math."]
 greetings = ["Hi!", "Hello!", "Happy to be here!"]
 greetRobot = ["hi", "hello", "meet", "here"]
 
-mood = "/mood"
+mood = prefix + "mood"
 genericSearches = ["dungeon", "adventure", "rpg", "dungeons and dragons", "d&d", "background", "fantasy", "video game"]
 moodChoices = ["creepy", "epic", "battle", "crypt", "enchanted", "village", "woods", "winter", "city", "desert"]
 
-name = "/name"
-nameType = "/nametypes"
+name = prefix + "name"
+nameType = prefix + "nametypes"
 nameFile = "nameList.csv"
-nameFail = "Sorry, you sent a specifier that's not used. Use /nametypes to see what's available."
+nameFail = "Sorry, you sent a specifier that's not used. Use "+prefix+"nametypes to see what's available."
 fileFail = "No name file (" + nameFile + ") found."
 
-save = "/save"
-useSaved = "/saved"
+save = prefix + "save"
+useSaved = prefix + "saved"
 rollsFile = "customRolls.json"
-delete = "/delete"
-getCommandsList = "/commands"
-saveHelp = "/savehelp"
+delete = prefix + "delete"
+getCommandsList = prefix + "commands"
+saveHelp = prefix + "savehelp"
 saveDoc = """
 ```
 Dicey can save up to 1000 custom commands to be accessed later.
@@ -72,48 +75,48 @@ In your command name, use only ASCII characters and do not use spaces.
 Uses the file """ + rollsFile + """ in the same directory as Dicey's code.
 Commands are specific to the computer Dicey is running on!
 
-/save [name] [command] saves a simple roll command under "name" and sends an example roll. This will NOT overwrite an existing command. Make sure you put a space between [name] and [command].
-/saved [name] accesses the saved command "name"
-/delete [name] deletes command "name"
-/commands sends a list of all available custom commands. This may be long!
+"""+prefix+"""save [name] [command] saves a simple roll command under "name" and sends an example roll. This will NOT overwrite an existing command. Make sure you put a space between [name] and [command].
+"""+prefix+"""saved [name] accesses the saved command "name"
+"""+prefix+"""delete [name] deletes command "name"
+"""+prefix+"""commands sends a list of all available custom commands. This may be long!
 ```
 """
 
-turn = "/turn"
+turn = prefix + "turn"
 
 helpDoc = """
 ```
-/roll [[iterations]x][[number]d[die type]][+[bonus]][other keys][,[new roll]]
-Use /SimpleRollHelp for info and examples.
+"""+prefix+"""roll [[iterations]x][[number]d[die type]][+[bonus]][other keys][,[new roll]]
+Use """+prefix+"""SimpleRollHelp for info and examples.
 
-/croll [[number=1][b OR p]]...[[score][threshold]]
-Use /CoCRollHelp for info and examples.
+"""+prefix+"""croll [[number=1][b OR p]]...[[score][threshold]]
+Use """+prefix+"""CoCRollHelp for info and examples.
 
-/tros [[iterations]x][[pool]/[target number]] OR simple roll[, [new roll]]
-Use /trosRollHelp for info and examples.
+"""+prefix+"""tros [[iterations]x][[pool]/[target number]] OR simple roll[, [new roll]]
+Use """+prefix+"""trosRollHelp for info and examples.
 
-/mood [search terms]
+"""+prefix+"""mood [search terms]
 Sends a random youtube video found by searching rpg-background-music type keywords.
 No argument returns a generic video chosen from a list of words (like "battle," "village," etc.)
 Or add your own search terms
 
-/name [origin] [label]
+"""+prefix+"""name [origin] [label]
 Sends name chosen from a file in the same directory as Dicey's code, called """ + nameFile + """
 Origin and label are optional specifiers. 
-Use /nametypes for more info.
+Use """+prefix+"""nametypes for more info.
 
-/turn [level] [charisma bonus]
+"""+prefix+"""turn [level] [charisma bonus]
 Rolls a 3.5E D&D turning check.
 
-/save [name] [command]
+"""+prefix+"""save [name] [command]
 Saves a simple roll command under a custom name, saved in Dicey's code directory under """ + rollsFile + """
-Acceess with /saved, delete with /delete, see options with /commands
-See /saveHelp for more info
+Acceess with """+prefix+"""saved, delete with """+prefix+"""delete, see options with """+prefix+"""commands
+See """+prefix+"""saveHelp for more info
 
-/disconnect
+"""+prefix+"""disconnect
 As on tin
 
-/help
+"""+prefix+"""help
 You already found me!
 ```
 """
@@ -238,7 +241,7 @@ Available name types:
 Origins: """ + ", ".join(origins) + """
 Labels: """ + ", ".join(labels) + """, name
 
-Request names with /name [origin] [label]. Both inputs are optional.
+Request names with """+prefix+"""name [origin] [label]. Both inputs are optional.
 The 'name' label will search over both male and female names. If no label is given, 'name' is used as the default.
 ```"""
 
@@ -457,7 +460,7 @@ async def on_ready():
 	print("Dicey connected")
 	if FirstConnect:
 		FirstConnect = False
-	await client.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="/roll, /help"))
+	await client.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=prefix+"roll, "+prefix+"help"))
 
 @client.event
 async def on_message(message):
@@ -489,7 +492,7 @@ async def on_message(message):
 	elif parse == trosRollHelp:
 		await message.channel.send(trosRollDoc)
 
-	# Handle a /roll command
+	# Handle a roll command
 	elif parse.startswith(simpleRoll):
 
 		roll = Roll(parse[len(simpleRoll):])
@@ -556,7 +559,7 @@ async def on_message(message):
 			for message in sendList:
 				await message.channel.send(message)
 
-	# Handle a /tros command
+	# Handle a tros command
 	elif parse.startswith(trosRoll):
 
 		roll = RoS(parse[len(trosRoll):])
@@ -574,7 +577,7 @@ async def on_message(message):
 
 			await message.channel.send(embed=em)
 
-	# Handle a /croll command
+	# Handle a croll command
 	elif parse.startswith(cRoll):
 		roll = CoC(parse[len(cRoll):])
 		result = roll.format()
