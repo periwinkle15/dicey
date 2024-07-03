@@ -30,7 +30,9 @@ Global variables
 
 logging.basicConfig(level=logging.INFO)
 
-client = discord.Client()
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(intents=intents)
 discord.opus.load_opus
 
 prefix = "$"
@@ -61,6 +63,8 @@ nameType = prefix + "nametypes"
 nameFile = "nameList.csv"
 nameFail = "Sorry, you sent a specifier that's not used. Use "+prefix+"nametypes to see what's available."
 fileFail = "No name file (" + nameFile + ") found."
+
+weather = prefix + "weather"
 
 save = prefix + "save"
 useSaved = prefix + "saved"
@@ -272,6 +276,51 @@ def getTurn(turnString):
 	title = str(damage) + " HD damage, " + str(maxHD) + " HD max"
 
 	return title, footer
+
+def getWeather(weatherString):
+
+	if weatherString == "temperate":
+		weatherString = "temp"
+
+	tempDict = {"warm": 5*["severely hot."] + 20*["hot."] + 55*["warm."] + 20*["moderate."],
+				"temp": 5*["hot."] + 30*["warm."] + 50*["moderate."] + 15*["cold."],
+				"cold": 9*["warm."] + 25*["moderate."] + 55*["cold."] + 11*["severely cold."]}
+
+	windDict = {"warm": 68*["Fair"] + 26*["Varies"] + 6*["Storm"],
+				"temp": 61*["Fair"] + 33*["Varies"] + 6*["Storm"],
+				"cold": 56*["Fair"] + 36*["Varies"] + 8*["Storm"]}
+
+	precDict = {"warm": 62*["Skies are clear."] + 36*["It's raining."] + 2*["It's foggy."],
+				"temp": 68*["Skies are clear."] + 23*["It's raining."] + 6*["It's foggy."] + 3*["It's snowing."],
+				"cold": 70*["Skies are clear."] + 10*["It's raining."] + 9*["It's foggy."] + 11*["It's snowing."]}
+
+	strengthDict = {"Fair": 10*["Still"] + 55*["Light"] + 25*["Moderate"] + 9*["Strong"] + 1*["Severe"],
+					"Varies": 20*["Light"] + 45*["Moderate"] + 20*["Strong"] + 13*["Severe"] + 2*["Gale"],
+					"Storm": 10*["Strong"] + 40*["Severe"] + 40*["Gale"] + 2*["Hurricane"] + 1*["Dire gale"]}
+
+	sailingDict = {"Still": "Ships are becalmed.",
+				   "Light": "Sailing is normal.",
+				   "Moderate": "2x sailing speed.",
+				   "Strong":  "3x sailing speed.",
+				   "Severe": "Ships are driven. A profession (sailing) check DC 20 allows 3x sailing speed.",
+				   "Gale": "Ships are driven. A profession (sailing) check DC 30 allows 3x sailing speed.",
+				   "Hurricane": "Ships are driven.",
+				   "Dire gale": "Ships are driven."}
+
+	direction = 60*["prevailing direction. "] + 5*["north. "] + 5*["northeast. "] + 5*["east. "] + 5*["southeast. "] + 5*["south. "] + 5*["southwest. "] + 5*["west. "] + 5*["northwest. "]
+
+	try:
+		wind = choice(windDict[weatherString])
+		strength = choice(strengthDict[wind])
+
+		weather = "Today is " + choice(tempDict[weatherString]) + "\n"
+		weather += strength + " winds from the " + choice(direction) + sailingDict[strength] + "\n" 
+		weather += choice(precDict[weatherString])
+
+	except KeyError:
+		weather = "You sent a climate I don't recognize. Try warm, temperate/temp, or cold."
+
+	return weather
 
 def saveCommand(commandString):
 	"""
@@ -611,6 +660,9 @@ async def on_message(message):
 
 	elif parse.startswith(name):
 		await message.channel.send(getName(message.content[len(name):].strip().lower()))
+
+	elif message.content.startswith(weather):
+		await message.channel.send(getWeather(message.content[len(weather):].strip().lower()))
 
 	# Cute extras
 	elif "badrobot" in parse.replace(" ", "") or "badbot" in parse.replace(" ", "") and "not" not in parse:
