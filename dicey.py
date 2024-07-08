@@ -32,7 +32,8 @@ logging.basicConfig(level=logging.INFO)
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(intents=intents)
+client = discord.Client(intents=intents)
+
 discord.opus.load_opus
 
 prefix = "$"
@@ -279,19 +280,19 @@ def getTurn(turnString):
 
 def getWeather(weatherString):
 
-	if weatherString == "temperate":
-		weatherString = "temp"
+	if weatherString == "temp":
+		weatherString = "temperate"
 
 	tempDict = {"warm": 5*["severely hot."] + 20*["hot."] + 55*["warm."] + 20*["moderate."],
-				"temp": 5*["hot."] + 30*["warm."] + 50*["moderate."] + 15*["cold."],
+				"temperate": 5*["hot."] + 30*["warm."] + 50*["moderate."] + 15*["cold."],
 				"cold": 9*["warm."] + 25*["moderate."] + 55*["cold."] + 11*["severely cold."]}
 
 	windDict = {"warm": 68*["Fair"] + 26*["Varies"] + 6*["Storm"],
-				"temp": 61*["Fair"] + 33*["Varies"] + 6*["Storm"],
+				"temperate": 61*["Fair"] + 33*["Varies"] + 6*["Storm"],
 				"cold": 56*["Fair"] + 36*["Varies"] + 8*["Storm"]}
 
 	precDict = {"warm": 62*["Skies are clear."] + 36*["It's raining."] + 2*["It's foggy."],
-				"temp": 68*["Skies are clear."] + 23*["It's raining."] + 6*["It's foggy."] + 3*["It's snowing."],
+				"temperate": 68*["Skies are clear."] + 23*["It's raining."] + 6*["It's foggy."] + 3*["It's snowing."],
 				"cold": 70*["Skies are clear."] + 10*["It's raining."] + 9*["It's foggy."] + 11*["It's snowing."]}
 
 	strengthDict = {"Fair": 10*["Still"] + 55*["Light"] + 25*["Moderate"] + 9*["Strong"] + 1*["Severe"],
@@ -302,25 +303,40 @@ def getWeather(weatherString):
 				   "Light": "Sailing is normal.",
 				   "Moderate": "2x sailing speed.",
 				   "Strong":  "3x sailing speed.",
-				   "Severe": "Ships are driven. A profession (sailing) check DC 20 allows 3x sailing speed.",
-				   "Gale": "Ships are driven. A profession (sailing) check DC 30 allows 3x sailing speed.",
-				   "Hurricane": "Ships are driven.",
-				   "Dire gale": "Ships are driven."}
+				   "Severe": "Ships are driven by the wind. A profession (sailing) check DC 20 instead allows sailing at 3x speed.",
+				   "Gale": "Ships are driven by the wind. A profession (sailing) check DC 30 instead allows sailing at 3x speed.",
+				   "Hurricane": "Ships are driven by the wind.",
+				   "Dire gale": "Ships are driven by the wind."}
 
 	direction = 60*["prevailing direction. "] + 5*["north. "] + 5*["northeast. "] + 5*["east. "] + 5*["southeast. "] + 5*["south. "] + 5*["southwest. "] + 5*["west. "] + 5*["northwest. "]
+
+	colorDict = {"severely hot.": COL_CRIT_FAILURE,
+				 "hot.": COL_NORM_FAILURE,
+				 "warm.": COL_EXTR_SUCCESS,
+				 "moderate.": COL_CRIT_SUCCESS,
+				 "cold.": COL_HARD_SUCCESS,
+				 "severely cold.": COL_NORM_SUCCESS}
 
 	try:
 		wind = choice(windDict[weatherString])
 		strength = choice(strengthDict[wind])
+		temp = choice(tempDict[weatherString])
 
-		weather = "Today is " + choice(tempDict[weatherString]) + "\n"
+		weather = "Today is " + temp + " "
+		weather += choice(precDict[weatherString]) + "\n"
 		weather += strength + " winds from the " + choice(direction) + sailingDict[strength] + "\n" 
-		weather += choice(precDict[weatherString])
+
+		colour = colorDict[temp]
 
 	except KeyError:
 		weather = "You sent a climate I don't recognize. Try warm, temperate/temp, or cold."
+		colour = COL_CRIT_SUCCESS
 
-	return weather
+	em = discord.Embed(title = "Weather Report",
+					   description = weather,
+					   colour = colour)
+
+	return em
 
 def saveCommand(commandString):
 	"""
@@ -662,7 +678,7 @@ async def on_message(message):
 		await message.channel.send(getName(message.content[len(name):].strip().lower()))
 
 	elif message.content.startswith(weather):
-		await message.channel.send(getWeather(message.content[len(weather):].strip().lower()))
+		await message.channel.send(embed=getWeather(message.content[len(weather):].strip().lower()))
 
 	# Cute extras
 	elif "badrobot" in parse.replace(" ", "") or "badbot" in parse.replace(" ", "") and "not" not in parse:
