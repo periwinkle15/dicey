@@ -317,14 +317,22 @@ def getWeather(weatherString):
 				 "cold.": COL_HARD_SUCCESS,
 				 "severely cold.": COL_NORM_SUCCESS}
 
+	emojiDict = {"Skies are clear.": ":sun:",
+				 "It's raining.": ":cloud_rain:",
+				 "It's foggy.": ":fog:",
+				 "It's snowing.": ":cloud_snow:"}
+
 	try:
 		wind = choice(windDict[weatherString])
 		strength = choice(strengthDict[wind])
 		temp = choice(tempDict[weatherString])
+		prec = choice(precDict[weatherString])
 
 		weather = "Today is " + temp + " "
-		weather += choice(precDict[weatherString]) + "\n"
-		weather += strength + " winds from the " + choice(direction) + sailingDict[strength] + "\n" 
+		weather += prec + "\n"
+		weather += strength + " winds from the " + choice(direction) + sailingDict[strength]
+
+		weather += "\n\nClimate: " + weatherString
 
 		colour = colorDict[temp]
 
